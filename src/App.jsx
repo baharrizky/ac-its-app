@@ -245,14 +245,41 @@ export default function App() {
           <div className="card" style={{ maxWidth: 360, margin: "0 auto" }}>
             <div className="tag-eyebrow">Login</div>
             <h2 className="disp" style={{ fontSize: 19, marginBottom: 14 }}>Selamat datang</h2>
+
+            <div style={{ marginBottom: 16 }}>
+              <div style={{ fontSize: 12.5, color: "var(--muted)", marginBottom: 8 }}>Masuk sebagai</div>
+              <div style={{ display: "flex", gap: 8 }}>
+                <button
+                  className="btn-ghost"
+                  style={{
+                    flex: 1, justifyContent: "center",
+                    ...(role === "siswa" ? { borderColor: "var(--brand)", background: "var(--brand-light)", color: "var(--brand)", fontWeight: 600 } : {}),
+                  }}
+                  onClick={() => setRole("siswa")}
+                >
+                  <User size={14} /> Siswa
+                </button>
+                <button
+                  className="btn-ghost"
+                  style={{
+                    flex: 1, justifyContent: "center",
+                    ...(role === "guru" ? { borderColor: "var(--brand)", background: "var(--brand-light)", color: "var(--brand)", fontWeight: 600 } : {}),
+                  }}
+                  onClick={() => setRole("guru")}
+                >
+                  <Users size={14} /> Guru
+                </button>
+              </div>
+            </div>
+
             <div style={{ marginBottom: 10 }}>
               <input type="text" placeholder="Nama (simulasi login)" value={name} onChange={(e) => setName(e.target.value)} />
             </div>
             <div style={{ marginBottom: 16 }}>
               <input type="password" placeholder="Kata sandi (tidak divalidasi di prototype)" />
             </div>
-            <button className="btn-primary" disabled={!name.trim()} onClick={() => { setMode("app"); setScreen("dashboard"); }}>
-              Login <ArrowRight size={15} />
+            <button className="btn-primary" disabled={!name.trim()} onClick={() => { setMode("app"); setScreen("dashboard"); setGuruTab("beranda"); }}>
+              Login sebagai {role === "siswa" ? "Siswa" : "Guru"} <ArrowRight size={15} />
             </button>
           </div>
         </div>
@@ -262,9 +289,11 @@ export default function App() {
         <>
           <div className="topbar">
             <div className="brand"><GraduationCap size={20} /> AC-ITS</div>
-            <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-              <button className={"tabbtn" + (role === "siswa" ? " active" : "")} onClick={() => { setRole("siswa"); setScreen("dashboard"); }}>Siswa</button>
-              <button className={"tabbtn" + (role === "guru" ? " active" : "")} onClick={() => { setRole("guru"); setGuruTab("beranda"); }}>Guru</button>
+            <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+              <span className="pill" style={{ background: "var(--brand-light)", color: "var(--brand)" }}>
+                {role === "siswa" ? <><User size={12} style={{ verticalAlign: -1 }} /> Siswa</> : <><Users size={12} style={{ verticalAlign: -1 }} /> Guru</>}
+                {name && ` · ${name}`}
+              </span>
               <button className="btn-ghost" onClick={logout}><LogOut size={14} /> Keluar</button>
             </div>
           </div>
