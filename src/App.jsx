@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useEffect } from "react";
 import {
   GraduationCap, LayoutDashboard, BookOpen, PenLine, TrendingUp, User,
   Lightbulb, CheckCircle2, AlertTriangle, ArrowRight, ArrowLeft, LogOut, Database, Users
@@ -74,10 +74,16 @@ function statusOf(attempts) {
 const toneColor = { good: "var(--teal)", warn: "var(--amber)", bad: "var(--rose)", neutral: "var(--muted)" };
 
 export default function App() {
-  const [mode, setMode] = useState("landing"); // landing | login | app
-  const [role, setRole] = useState("siswa"); // siswa | guru
+  const [mode, setMode] = useState(() => {
+    try { return localStorage.getItem("acits_mode") || "landing"; } catch { return "landing"; }
+  }); // landing | login | app
+  const [role, setRole] = useState(() => {
+    try { return localStorage.getItem("acits_role") || "siswa"; } catch { return "siswa"; }
+  }); // siswa | guru
   const [screen, setScreen] = useState("dashboard");
-  const [name, setName] = useState("");
+  const [name, setName] = useState(() => {
+    try { return localStorage.getItem("acits_name") || ""; } catch { return ""; }
+  });
   const [attempts, setAttempts] = useState({ E1: [], E2: [], E3: [], E4: [], E5: [], E6: [] });
   const [misconceptions, setMisconceptions] = useState([]);
   const [activeConcept, setActiveConcept] = useState("E1");
@@ -88,6 +94,16 @@ export default function App() {
   const [diag, setDiag] = useState(null);
   const [redirectNote, setRedirectNote] = useState(null);
   const [guruTab, setGuruTab] = useState("beranda");
+
+  useEffect(() => {
+    try {
+      if (mode === "app") {
+        localStorage.setItem("acits_mode", mode);
+        localStorage.setItem("acits_role", role);
+        localStorage.setItem("acits_name", name);
+      }
+    } catch {}
+  }, [mode, role, name]);
 
   const statuses = useMemo(() => {
     const s = {};
@@ -173,6 +189,11 @@ export default function App() {
     setMode("landing"); setRole("siswa"); setScreen("dashboard"); setName("");
     setAttempts({ E1: [], E2: [], E3: [], E4: [], E5: [], E6: [] });
     setMisconceptions([]); setPoolIndex({ E1: 0, E2: 0, E3: 0, E4: 0, E5: 0, E6: 0 });
+    try {
+      localStorage.removeItem("acits_mode");
+      localStorage.removeItem("acits_role");
+      localStorage.removeItem("acits_name");
+    } catch {}
   }
 
   const overallPct = useMemo(() => {
