@@ -1,8 +1,16 @@
 import React, { useState, useMemo, useEffect } from "react";
 import {
   GraduationCap, LayoutDashboard, BookOpen, PenLine, TrendingUp, User,
-  Lightbulb, CheckCircle2, AlertTriangle, ArrowRight, ArrowLeft, LogOut, Database, Users
+  Lightbulb, CheckCircle2, AlertTriangle, ArrowRight, ArrowLeft, LogOut, Database, Users,
+  Mail, Lock, Loader2, RefreshCw
 } from "lucide-react";
+import { auth, db } from "./firebase";
+import {
+  onAuthStateChanged, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut,
+} from "firebase/auth";
+import {
+  doc, getDoc, setDoc, collection, query, where, getDocs,
+} from "firebase/firestore";
 
 // ---------------- DATA: Peta konsep (sesuai Knowledge Base) ----------------
 const CONCEPTS = {
@@ -14,6 +22,8 @@ const CONCEPTS = {
   E6: { name: "Persamaan Eksponen", short: "aˣ=b", prereq: ["E1", "E2", "E3", "E4", "E5"] },
 };
 const CONCEPT_ORDER = ["E1", "E2", "E3", "E4", "E5", "E6"];
+const EMPTY_ATTEMPTS = { E1: [], E2: [], E3: [], E4: [], E5: [], E6: [] };
+const EMPTY_POOLIDX = { E1: 0, E2: 0, E3: 0, E4: 0, E5: 0, E6: 0 };
 
 const MATERI = {
   E1: { formula: "aⁿ = a × a × ... (n kali)", penjelasan: "Pangkat positif berarti basis dikalikan dengan dirinya sendiri sebanyak n kali.", contoh: "2³ = 2 × 2 × 2 = 8" },
@@ -31,15 +41,6 @@ const HINTS = {
   E4: { t1: "Ingat: pangkat pecahan berarti bentuk akar — a^(m/n) = akar pangkat n dari aᵐ, bukan a dibagi n.", t2: "Contoh: 8^(1/3) = akar pangkat 3 dari 8 = 2 (bukan 8/3).", full: "a^(m/n) = ⁿ√(aᵐ). Ubah dulu ke bentuk akar sebelum menghitung." },
   E5: { t1: "Kalau basisnya sama, pangkatnya dijumlahkan — basisnya sendiri tidak berubah dan tidak ikut dikalikan.", t2: "Contoh: 3² × 3³ = 3⁽²⁺³⁾ = 3⁵ = 243.", full: "aᵐ × aⁿ = aᵐ⁺ⁿ. Basis tetap sama, hanya pangkatnya yang dijumlahkan." },
   E6: { t1: "Untuk menyelesaikan aˣ = b, samakan dulu basis kedua ruas, baru samakan pangkatnya.", t2: "Contoh: 2ˣ = 8 → 2ˣ = 2³ → x = 3.", full: "Kalau basis kedua ruas bisa disamakan, pangkatnya pasti sama, sehingga x bisa langsung dibaca dari situ." },
-};
-
-const PRETEST = {
-  E1: { text: "3³ = ?", options: [{ text: "27", correct: true }, { text: "9", tag: "kali_basis_eksponen" }, { text: "6", tag: "jumlah_bukan_pangkat" }, { text: "30" }] },
-  E2: { text: "7⁰ = ?", options: [{ text: "1", correct: true }, { text: "0", tag: "nol_pangkat_nol" }, { text: "7", tag: "abai_pangkat_nol" }, { text: "70" }] },
-  E3: { text: "2⁻² = ?", options: [{ text: "1/4", correct: true }, { text: "−4", tag: "tanda_pangkat_negatif" }, { text: "4", tag: "abai_tanda_negatif" }, { text: "−1/4" }] },
-  E4: { text: "8^(1/3) = ?", options: [{ text: "2", correct: true }, { text: "8/3", tag: "bagi_bukan_akar" }, { text: "24", tag: "kali_bukan_akar" }, { text: "4" }] },
-  E5: { text: "2³ × 2² = ?", options: [{ text: "2⁵ (=32)", correct: true }, { text: "2⁶ (=64)", tag: "kali_pangkat" }, { text: "4⁵", tag: "kali_basis" }, { text: "4²" }] },
-  E6: { text: "2ˣ = 8, x = ?", options: [{ text: "3", correct: true }, { text: "4", tag: "salah_samakan_basis" }, { text: "6" }, { text: "8" }] },
 };
 
 const PRACTICE_POOL = {
@@ -71,39 +72,95 @@ function statusOf(attempts) {
   if (attempts.length >= 5 && m < 0.75) return { label: "Butuh remedial", tone: "bad" };
   return { label: "Dalam proses", tone: "warn" };
 }
+function overallPctOf(attempts) {
+  const tested = CONCEPT_ORDER.map((c) => computeMastery(attempts[c])).filter((m) => m !== null);
+  if (tested.length === 0) return 0;
+  return Math.round((tested.reduce((a, b) => a + b, 0) / CONCEPT_ORDER.length) * 100);
+}
 const toneColor = { good: "var(--teal)", warn: "var(--amber)", bad: "var(--rose)", neutral: "var(--muted)" };
 
 export default function App() {
-  const [mode, setMode] = useState(() => {
-    try { return localStorage.getItem("acits_mode") || "landing"; } catch { return "landing"; }
-  }); // landing | login | app
-  const [role, setRole] = useState(() => {
-    try { return localStorage.getItem("acits_role") || "siswa"; } catch { return "siswa"; }
-  }); // siswa | guru
-  const [screen, setScreen] = useState("dashboard");
-  const [name, setName] = useState(() => {
-    try { return localStorage.getItem("acits_name") || ""; } catch { return ""; }
-  });
-  const [attempts, setAttempts] = useState({ E1: [], E2: [], E3: [], E4: [], E5: [], E6: [] });
+  // ---------- Auth & profil ----------
+  const [authUser, setAuthUser] = useState(null);
+  const [authLoading, setAuthLoading] = useState(true);
+  const [profile, setProfile] = useState(null); // { name, role }
+  const [mode, setMode] = useState("landing"); // landing | auth | app
+  const [authTab, setAuthTab] = useState("login"); // login | daftar
+  const [authRole, setAuthRole] = useState("siswa"); // role dipilih saat daftar
+  const [authName, setAuthName] = useState("");
+  const [authEmail, setAuthEmail] = useState("");
+  const [authPassword, setAuthPassword] = useState("");
+  const [authError, setAuthError] = useState("");
+  const [authSubmitting, setAuthSubmitting] = useState(false);
+
+  // ---------- Progress siswa (tersimpan di Firestore) ----------
+  const [progressLoaded, setProgressLoaded] = useState(false);
+  const [attempts, setAttempts] = useState(EMPTY_ATTEMPTS);
   const [misconceptions, setMisconceptions] = useState([]);
+  const [poolIndex, setPoolIndex] = useState(EMPTY_POOLIDX);
+
+  // ---------- Navigasi & latihan ----------
+  const [screen, setScreen] = useState("dashboard");
   const [activeConcept, setActiveConcept] = useState("E1");
-  const [poolIndex, setPoolIndex] = useState({ E1: 0, E2: 0, E3: 0, E4: 0, E5: 0, E6: 0 });
   const [consecWrong, setConsecWrong] = useState(0);
   const [hintTier, setHintTier] = useState(0);
   const [selected, setSelected] = useState(null);
   const [diag, setDiag] = useState(null);
   const [redirectNote, setRedirectNote] = useState(null);
-  const [guruTab, setGuruTab] = useState("beranda");
 
+  // ---------- Guru ----------
+  const [guruTab, setGuruTab] = useState("beranda");
+  const [guruStudents, setGuruStudents] = useState([]);
+  const [guruLoading, setGuruLoading] = useState(false);
+
+  // Pantau status login Firebase
   useEffect(() => {
-    try {
-      if (mode === "app") {
-        localStorage.setItem("acits_mode", mode);
-        localStorage.setItem("acits_role", role);
-        localStorage.setItem("acits_name", name);
+    const unsub = onAuthStateChanged(auth, async (u) => {
+      setAuthUser(u);
+      if (u) {
+        const snap = await getDoc(doc(db, "users", u.uid));
+        if (snap.exists()) {
+          setProfile(snap.data());
+          setMode("app");
+          setScreen("dashboard");
+        } else {
+          // profil belum ada (harusnya tidak terjadi) -> paksa logout
+          await signOut(auth);
+        }
+      } else {
+        setProfile(null);
+        setAttempts(EMPTY_ATTEMPTS);
+        setMisconceptions([]);
+        setPoolIndex(EMPTY_POOLIDX);
+        setProgressLoaded(false);
+        setMode("landing");
       }
-    } catch {}
-  }, [mode, role, name]);
+      setAuthLoading(false);
+    });
+    return () => unsub();
+  }, []);
+
+  // Ambil progress siswa dari Firestore setelah profil diketahui
+  useEffect(() => {
+    async function loadProgress() {
+      if (!authUser || !profile || profile.role !== "siswa") return;
+      const snap = await getDoc(doc(db, "progress", authUser.uid));
+      if (snap.exists()) {
+        const d = snap.data();
+        setAttempts(d.attempts || EMPTY_ATTEMPTS);
+        setMisconceptions(d.misconceptions || []);
+        setPoolIndex(d.poolIndex || EMPTY_POOLIDX);
+      }
+      setProgressLoaded(true);
+    }
+    loadProgress();
+  }, [authUser, profile]);
+
+  // Simpan progress siswa ke Firestore setiap kali berubah (setelah data awal termuat)
+  useEffect(() => {
+    if (!authUser || !profile || profile.role !== "siswa" || !progressLoaded) return;
+    setDoc(doc(db, "progress", authUser.uid), { attempts, misconceptions, poolIndex }, { merge: true }).catch(() => {});
+  }, [attempts, misconceptions, poolIndex, authUser, profile, progressLoaded]);
 
   const statuses = useMemo(() => {
     const s = {};
@@ -185,22 +242,120 @@ export default function App() {
     }
   }
 
-  function logout() {
-    setMode("landing"); setRole("siswa"); setScreen("dashboard"); setName("");
-    setAttempts({ E1: [], E2: [], E3: [], E4: [], E5: [], E6: [] });
-    setMisconceptions([]); setPoolIndex({ E1: 0, E2: 0, E3: 0, E4: 0, E5: 0, E6: 0 });
-    try {
-      localStorage.removeItem("acits_mode");
-      localStorage.removeItem("acits_role");
-      localStorage.removeItem("acits_name");
-    } catch {}
+  async function logout() {
+    await signOut(auth);
+    setScreen("dashboard");
+    setGuruStudents([]);
   }
 
-  const overallPct = useMemo(() => {
-    const tested = CONCEPT_ORDER.map((c) => computeMastery(attempts[c])).filter((m) => m !== null);
-    if (tested.length === 0) return 0;
-    return Math.round((tested.reduce((a, b) => a + b, 0) / CONCEPT_ORDER.length) * 100);
-  }, [attempts]);
+  const overallPct = useMemo(() => overallPctOf(attempts), [attempts]);
+
+  // ---------- Auth: submit login / daftar ----------
+  async function submitAuth() {
+    setAuthError("");
+    if (!authEmail.trim() || !authPassword.trim() || (authTab === "daftar" && !authName.trim())) {
+      setAuthError("Lengkapi semua kolom terlebih dahulu.");
+      return;
+    }
+    setAuthSubmitting(true);
+    try {
+      if (authTab === "daftar") {
+        const cred = await createUserWithEmailAndPassword(auth, authEmail.trim(), authPassword);
+        const uid = cred.user.uid;
+        await setDoc(doc(db, "users", uid), { name: authName.trim(), role: authRole, email: authEmail.trim() });
+        if (authRole === "siswa") {
+          await setDoc(doc(db, "progress", uid), { attempts: EMPTY_ATTEMPTS, misconceptions: [], poolIndex: EMPTY_POOLIDX });
+        }
+        // onAuthStateChanged akan otomatis memuat profil & masuk ke app
+      } else {
+        await signInWithEmailAndPassword(auth, authEmail.trim(), authPassword);
+      }
+    } catch (e) {
+      const map = {
+        "auth/email-already-in-use": "Email ini sudah terdaftar. Coba login.",
+        "auth/invalid-email": "Format email tidak valid.",
+        "auth/weak-password": "Kata sandi minimal 6 karakter.",
+        "auth/invalid-credential": "Email atau kata sandi salah.",
+        "auth/user-not-found": "Akun tidak ditemukan.",
+        "auth/wrong-password": "Kata sandi salah.",
+      };
+      setAuthError(map[e.code] || "Terjadi kesalahan. Coba lagi.");
+    } finally {
+      setAuthSubmitting(false);
+    }
+  }
+
+  // ---------- Guru: ambil data semua siswa dari Firestore ----------
+  async function loadGuruData() {
+    setGuruLoading(true);
+    try {
+      const usersSnap = await getDocs(query(collection(db, "users"), where("role", "==", "siswa")));
+      const list = [];
+      for (const uDoc of usersSnap.docs) {
+        const u = uDoc.data();
+        const progSnap = await getDoc(doc(db, "progress", uDoc.id));
+        const prog = progSnap.exists() ? progSnap.data() : { attempts: EMPTY_ATTEMPTS, misconceptions: [] };
+        list.push({ uid: uDoc.id, name: u.name || "Siswa", attempts: prog.attempts || EMPTY_ATTEMPTS, misconceptions: prog.misconceptions || [] });
+      }
+      setGuruStudents(list);
+    } catch (e) {
+      // biarkan list kosong kalau gagal, tampilkan tombol coba lagi
+    }
+    setGuruLoading(false);
+  }
+
+  useEffect(() => {
+    if (mode === "app" && profile?.role === "guru") {
+      loadGuruData();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mode, profile]);
+
+  const guruAvgPct = useMemo(() => {
+    if (guruStudents.length === 0) return 0;
+    const sum = guruStudents.reduce((a, s) => a + overallPctOf(s.attempts), 0);
+    return Math.round(sum / guruStudents.length);
+  }, [guruStudents]);
+
+  function guruConceptMastery(c) {
+    const ms = guruStudents.map((s) => computeMastery(s.attempts[c] || [])).filter((m) => m !== null);
+    if (ms.length === 0) return null;
+    return ms.reduce((a, b) => a + b, 0) / ms.length;
+  }
+
+  const guruHardestConcept = useMemo(() => {
+    const withData = CONCEPT_ORDER.filter((c) => guruConceptMastery(c) !== null);
+    if (withData.length === 0) return "Belum ada data";
+    const worst = withData.sort((a, b) => guruConceptMastery(a) - guruConceptMastery(b))[0];
+    return CONCEPTS[worst].name;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [guruStudents]);
+
+  const allMisconceptions = useMemo(
+    () => guruStudents.flatMap((s) => (s.misconceptions || []).map((m) => ({ ...m, student: s.name }))),
+    [guruStudents]
+  );
+
+  // ---------- Tampilan loading awal ----------
+  if (authLoading) {
+    return (
+      <div className="wrap" style={{ display: "flex", alignItems: "center", justifyContent: "center", minHeight: 300 }}>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" />
+        <style>{`
+          :root {
+            --paper:#F3F6F1; --paper-2:#EAEFE6; --ink:#1F2A24; --muted:#6B7A70;
+            --teal:#2F6F5E; --teal-light:#D7E8E1; --amber:#C97A2B; --amber-light:#F5E3CE;
+            --plum:#6B4E71; --plum-light:#E8DEEA; --rose:#B5495B; --rose-light:#F3DEE1;
+            --line:#D8DED4; --brand:#44519C; --brand-light:#E3E6F4;
+          }
+          .wrap { font-family:'Inter',sans-serif; background:var(--paper); color:var(--ink); border-radius:16px; min-height:100%; }
+        `}</style>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, color: "var(--muted)" }}>
+          <Loader2 size={18} className="spin" /> Memuat...
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="wrap">
@@ -219,7 +374,7 @@ export default function App() {
         .btn-primary { background:var(--brand); color:white; border:none; padding:11px 20px; border-radius:8px; font-weight:500; font-size:14px; display:inline-flex; align-items:center; gap:6px; }
         .btn-primary:disabled { opacity:0.35; cursor:not-allowed; }
         .btn-ghost { background:transparent; border:1px solid var(--line); color:var(--ink); padding:9px 16px; border-radius:8px; font-size:13.5px; display:inline-flex; align-items:center; gap:6px; }
-        input[type=text],input[type=password] { width:100%; padding:11px 13px; border-radius:8px; border:1px solid var(--line); font-size:14px; box-sizing:border-box; }
+        input[type=text],input[type=password],input[type=email] { width:100%; padding:11px 13px; border-radius:8px; border:1px solid var(--line); font-size:14px; box-sizing:border-box; }
         .card { background:white; border:1px solid var(--line); border-radius:14px; padding:22px; }
         .pill { font-size:11.5px; padding:3px 10px; border-radius:999px; font-weight:600; }
         .opt { display:block; width:100%; text-align:left; padding:12px 14px; border-radius:9px; border:1px solid var(--line); background:var(--paper-2); margin-bottom:9px; font-size:14.5px; font-family:'IBM Plex Mono'; }
@@ -233,6 +388,7 @@ export default function App() {
         .hint-t2 { background:var(--amber-light); color:var(--amber); }
         .hint-t3 { background:var(--rose-light); color:var(--rose); }
         .ok-box { background:var(--teal-light); color:var(--teal); padding:14px; border-radius:10px; margin:14px 0; font-size:13.5px; display:flex; gap:10px; align-items:center; }
+        .err-box { background:var(--rose-light); color:var(--rose); padding:11px 14px; border-radius:9px; margin-bottom:14px; font-size:13px; }
         .topbar { display:flex; align-items:center; justify-content:space-between; padding:14px 22px; border-bottom:1px solid var(--line); background:white; }
         .brand { display:flex; align-items:center; gap:8px; font-weight:700; color:var(--brand); font-size:16px; }
         .body-area { padding:22px; }
@@ -245,6 +401,11 @@ export default function App() {
         .tabbtn { padding:8px 14px; border-radius:8px; border:1px solid var(--line); background:white; font-size:13px; margin-right:8px; }
         .tabbtn.active { background:var(--brand); color:white; border-color:var(--brand); }
         .misc-item { font-size:12.5px; color:var(--amber); background:var(--amber-light); padding:6px 10px; border-radius:7px; margin-top:6px; }
+        .inputwrap { position:relative; }
+        .inputwrap svg { position:absolute; left:12px; top:50%; transform:translateY(-50%); color:var(--muted); }
+        .inputwrap input { padding-left:36px; }
+        .spin { animation: spin 0.8s linear infinite; }
+        @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
       `}</style>
 
       {mode === "landing" && (
@@ -256,76 +417,107 @@ export default function App() {
             <p style={{ color: "var(--muted)", fontSize: 14, maxWidth: 420, margin: "0 auto 20px" }}>
               Sistem pembelajaran adaptif materi Eksponensial — mendiagnosis pemahamanmu, memberi hint bertingkat, dan menyesuaikan jalur belajar secara personal.
             </p>
-            <button className="btn-primary" onClick={() => setMode("login")}>Mulai Belajar <ArrowRight size={15} /></button>
+            <button className="btn-primary" onClick={() => { setMode("auth"); setAuthTab("login"); setAuthError(""); }}>Mulai Belajar <ArrowRight size={15} /></button>
           </div>
         </div>
       )}
 
-      {mode === "login" && (
+      {mode === "auth" && (
         <div className="body-area">
-          <div className="card" style={{ maxWidth: 360, margin: "0 auto" }}>
-            <div className="tag-eyebrow">Login</div>
-            <h2 className="disp" style={{ fontSize: 19, marginBottom: 14 }}>Selamat datang</h2>
+          <div className="card" style={{ maxWidth: 380, margin: "0 auto" }}>
+            <div className="tag-eyebrow">{authTab === "login" ? "Login" : "Daftar Akun"}</div>
+            <h2 className="disp" style={{ fontSize: 19, marginBottom: 14 }}>
+              {authTab === "login" ? "Selamat datang kembali" : "Buat akun baru"}
+            </h2>
 
-            <div style={{ marginBottom: 16 }}>
-              <div style={{ fontSize: 12.5, color: "var(--muted)", marginBottom: 8 }}>Masuk sebagai</div>
-              <div style={{ display: "flex", gap: 8 }}>
-                <button
-                  className="btn-ghost"
-                  style={{
-                    flex: 1, justifyContent: "center",
-                    ...(role === "siswa" ? { borderColor: "var(--brand)", background: "var(--brand-light)", color: "var(--brand)", fontWeight: 600 } : {}),
-                  }}
-                  onClick={() => setRole("siswa")}
-                >
-                  <User size={14} /> Siswa
-                </button>
-                <button
-                  className="btn-ghost"
-                  style={{
-                    flex: 1, justifyContent: "center",
-                    ...(role === "guru" ? { borderColor: "var(--brand)", background: "var(--brand-light)", color: "var(--brand)", fontWeight: 600 } : {}),
-                  }}
-                  onClick={() => setRole("guru")}
-                >
-                  <Users size={14} /> Guru
-                </button>
-              </div>
+            <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
+              <button
+                className="btn-ghost"
+                style={{ flex: 1, justifyContent: "center", ...(authTab === "login" ? { borderColor: "var(--brand)", background: "var(--brand-light)", color: "var(--brand)", fontWeight: 600 } : {}) }}
+                onClick={() => { setAuthTab("login"); setAuthError(""); }}
+              >
+                Login
+              </button>
+              <button
+                className="btn-ghost"
+                style={{ flex: 1, justifyContent: "center", ...(authTab === "daftar" ? { borderColor: "var(--brand)", background: "var(--brand-light)", color: "var(--brand)", fontWeight: 600 } : {}) }}
+                onClick={() => { setAuthTab("daftar"); setAuthError(""); }}
+              >
+                Daftar
+              </button>
             </div>
 
-            <div style={{ marginBottom: 10 }}>
-              <input type="text" placeholder="Nama (simulasi login)" value={name} onChange={(e) => setName(e.target.value)} />
+            {authError && <div className="err-box"><AlertTriangle size={14} style={{ verticalAlign: -2 }} /> {authError}</div>}
+
+            {authTab === "daftar" && (
+              <>
+                <div style={{ marginBottom: 10 }}>
+                  <div style={{ fontSize: 12.5, color: "var(--muted)", marginBottom: 8 }}>Daftar sebagai</div>
+                  <div style={{ display: "flex", gap: 8 }}>
+                    <button
+                      className="btn-ghost"
+                      style={{ flex: 1, justifyContent: "center", ...(authRole === "siswa" ? { borderColor: "var(--brand)", background: "var(--brand-light)", color: "var(--brand)", fontWeight: 600 } : {}) }}
+                      onClick={() => setAuthRole("siswa")}
+                    >
+                      <User size={14} /> Siswa
+                    </button>
+                    <button
+                      className="btn-ghost"
+                      style={{ flex: 1, justifyContent: "center", ...(authRole === "guru" ? { borderColor: "var(--brand)", background: "var(--brand-light)", color: "var(--brand)", fontWeight: 600 } : {}) }}
+                      onClick={() => setAuthRole("guru")}
+                    >
+                      <Users size={14} /> Guru
+                    </button>
+                  </div>
+                </div>
+                <div style={{ marginBottom: 10 }}>
+                  <input type="text" placeholder="Nama lengkap" value={authName} onChange={(e) => setAuthName(e.target.value)} />
+                </div>
+              </>
+            )}
+
+            <div style={{ marginBottom: 10 }} className="inputwrap">
+              <Mail size={15} />
+              <input type="email" placeholder="Email" value={authEmail} onChange={(e) => setAuthEmail(e.target.value)} />
             </div>
-            <div style={{ marginBottom: 16 }}>
-              <input type="password" placeholder="Kata sandi (tidak divalidasi di prototype)" />
+            <div style={{ marginBottom: 16 }} className="inputwrap">
+              <Lock size={15} />
+              <input type="password" placeholder="Kata sandi (min. 6 karakter)" value={authPassword} onChange={(e) => setAuthPassword(e.target.value)} />
             </div>
-            <button className="btn-primary" disabled={!name.trim()} onClick={() => { setMode("app"); setScreen("dashboard"); setGuruTab("beranda"); }}>
-              Login sebagai {role === "siswa" ? "Siswa" : "Guru"} <ArrowRight size={15} />
+
+            <button className="btn-primary" disabled={authSubmitting} onClick={submitAuth} style={{ width: "100%", justifyContent: "center" }}>
+              {authSubmitting ? <Loader2 size={15} className="spin" /> : (authTab === "login" ? <>Login <ArrowRight size={15} /></> : <>Daftar <ArrowRight size={15} /></>)}
             </button>
           </div>
         </div>
       )}
 
-      {mode === "app" && (
+      {mode === "app" && profile && (
         <>
           <div className="topbar">
             <div className="brand"><GraduationCap size={20} /> AC-ITS</div>
             <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
               <span className="pill" style={{ background: "var(--brand-light)", color: "var(--brand)" }}>
-                {role === "siswa" ? <><User size={12} style={{ verticalAlign: -1 }} /> Siswa</> : <><Users size={12} style={{ verticalAlign: -1 }} /> Guru</>}
-                {name && ` · ${name}`}
+                {profile.role === "siswa" ? <><User size={12} style={{ verticalAlign: -1 }} /> Siswa</> : <><Users size={12} style={{ verticalAlign: -1 }} /> Guru</>}
+                {profile.name && ` · ${profile.name}`}
               </span>
               <button className="btn-ghost" onClick={logout}><LogOut size={14} /> Keluar</button>
             </div>
           </div>
 
-          {role === "siswa" && (
+          {profile.role === "siswa" && (
             <>
               <div className="body-area">
-                {screen === "dashboard" && (
+                {!progressLoaded && (
+                  <div className="card" style={{ display: "flex", alignItems: "center", gap: 8, color: "var(--muted)" }}>
+                    <Loader2 size={16} className="spin" /> Memuat progress belajarmu...
+                  </div>
+                )}
+
+                {progressLoaded && screen === "dashboard" && (
                   <div className="card">
                     <div className="tag-eyebrow">Dashboard Siswa</div>
-                    <h2 className="disp" style={{ fontSize: 19 }}>Halo, {name || "Siswa"} 👋</h2>
+                    <h2 className="disp" style={{ fontSize: 19 }}>Halo, {profile.name || "Siswa"} 👋</h2>
                     <p style={{ color: "var(--muted)", fontSize: 13.5, marginBottom: 14 }}>Semangat belajar hari ini.</p>
                     <div style={{ fontSize: 13, fontWeight: 600 }}>Progress keseluruhan</div>
                     <div className="bar-track"><div className="bar-fill" style={{ width: overallPct + "%", background: "var(--brand)" }} /></div>
@@ -345,7 +537,7 @@ export default function App() {
                   </div>
                 )}
 
-                {screen === "materi" && (
+                {progressLoaded && screen === "materi" && (
                   <div className="card">
                     {redirectNote && <div className="misc-item" style={{ marginBottom: 12 }}>↳ {redirectNote}</div>}
                     <div className="tag-eyebrow">Materi · {CONCEPTS[activeConcept].name}</div>
@@ -361,7 +553,7 @@ export default function App() {
                   </div>
                 )}
 
-                {screen === "latihan" && (
+                {progressLoaded && screen === "latihan" && (
                   <div className="card">
                     <div className="tag-eyebrow">Latihan · {CONCEPTS[activeConcept].name} · Salah berturut-turut: {consecWrong}</div>
                     <div className="qtext">{currentQ().text}</div>
@@ -374,7 +566,7 @@ export default function App() {
                   </div>
                 )}
 
-                {screen === "diagnosis" && diag && (
+                {progressLoaded && screen === "diagnosis" && diag && (
                   <div className="card">
                     <div className="tag-eyebrow">Diagnosis &amp; Feedback</div>
                     {diag.correct ? (
@@ -396,7 +588,7 @@ export default function App() {
                   </div>
                 )}
 
-                {screen === "hint" && diag && (
+                {progressLoaded && screen === "hint" && diag && (
                   <div className="card">
                     <div className="tag-eyebrow">Hint Adaptif · Tingkat {hintTier}</div>
                     <div className={"hint-box " + (hintTier === 1 ? "hint-t1" : hintTier === 2 ? "hint-t2" : "hint-t3")}>
@@ -412,7 +604,7 @@ export default function App() {
                   </div>
                 )}
 
-                {screen === "progress" && (
+                {progressLoaded && screen === "progress" && (
                   <div className="card">
                     <div className="tag-eyebrow">Progress Konsep</div>
                     {CONCEPT_ORDER.map((c) => {
@@ -436,10 +628,10 @@ export default function App() {
                   </div>
                 )}
 
-                {screen === "profil" && (
+                {progressLoaded && screen === "profil" && (
                   <div className="card">
                     <div className="tag-eyebrow">Profil</div>
-                    <h2 className="disp" style={{ fontSize: 19 }}>{name || "Siswa"}</h2>
+                    <h2 className="disp" style={{ fontSize: 19 }}>{profile.name || "Siswa"}</h2>
                     <p style={{ color: "var(--muted)", fontSize: 13.5 }}>Progress keseluruhan: {overallPct}%</p>
                     <button className="btn-ghost" onClick={logout} style={{ marginTop: 10 }}><LogOut size={14} /> Keluar</button>
                   </div>
@@ -456,47 +648,63 @@ export default function App() {
             </>
           )}
 
-          {role === "guru" && (
+          {profile.role === "guru" && (
             <div className="body-area">
-              <div style={{ marginBottom: 16 }}>
-                <button className={"tabbtn" + (guruTab === "beranda" ? " active" : "")} onClick={() => setGuruTab("beranda")}><Users size={13} style={{ verticalAlign: -2 }} /> Beranda</button>
-                <button className={"tabbtn" + (guruTab === "analitik" ? " active" : "")} onClick={() => setGuruTab("analitik")}><TrendingUp size={13} style={{ verticalAlign: -2 }} /> Analitik</button>
-                <button className={"tabbtn" + (guruTab === "materi" ? " active" : "")} onClick={() => setGuruTab("materi")}><Database size={13} style={{ verticalAlign: -2 }} /> Materi (Knowledge Base)</button>
+              <div style={{ marginBottom: 16, display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10 }}>
+                <div>
+                  <button className={"tabbtn" + (guruTab === "beranda" ? " active" : "")} onClick={() => setGuruTab("beranda")}><Users size={13} style={{ verticalAlign: -2 }} /> Beranda</button>
+                  <button className={"tabbtn" + (guruTab === "analitik" ? " active" : "")} onClick={() => setGuruTab("analitik")}><TrendingUp size={13} style={{ verticalAlign: -2 }} /> Analitik</button>
+                  <button className={"tabbtn" + (guruTab === "materi" ? " active" : "")} onClick={() => setGuruTab("materi")}><Database size={13} style={{ verticalAlign: -2 }} /> Materi (Knowledge Base)</button>
+                </div>
+                <button className="btn-ghost" onClick={loadGuruData} disabled={guruLoading}>
+                  {guruLoading ? <Loader2 size={14} className="spin" /> : <RefreshCw size={14} />} Muat ulang data
+                </button>
               </div>
 
               {guruTab === "beranda" && (
                 <div className="card">
-                  <div className="tag-eyebrow">Dashboard Guru — mode simulasi (1 siswa aktif)</div>
+                  <div className="tag-eyebrow">Dashboard Guru — data siswa dari database</div>
                   <div style={{ display: "flex", gap: 14, flexWrap: "wrap", marginTop: 10, marginBottom: 18 }}>
-                    <div className="card" style={{ flex: 1, minWidth: 140 }}><div style={{ fontSize: 11, color: "var(--muted)" }}>Total siswa</div><div className="disp" style={{ fontSize: 22 }}>1</div></div>
-                    <div className="card" style={{ flex: 1, minWidth: 140 }}><div style={{ fontSize: 11, color: "var(--muted)" }}>Rata-rata penguasaan</div><div className="disp" style={{ fontSize: 22 }}>{overallPct}%</div></div>
-                    <div className="card" style={{ flex: 1, minWidth: 140 }}><div style={{ fontSize: 11, color: "var(--muted)" }}>Konsep tersulit</div><div className="disp" style={{ fontSize: 16 }}>
-                      {(() => {
-                        const tested = CONCEPT_ORDER.filter((c) => attempts[c].length > 0);
-                        if (tested.length === 0) return "Belum ada data";
-                        const worst = tested.sort((a, b) => (computeMastery(attempts[a]) ?? 0) - (computeMastery(attempts[b]) ?? 0))[0];
-                        return CONCEPTS[worst].name;
-                      })()}
-                    </div></div>
+                    <div className="card" style={{ flex: 1, minWidth: 140 }}><div style={{ fontSize: 11, color: "var(--muted)" }}>Total siswa</div><div className="disp" style={{ fontSize: 22 }}>{guruStudents.length}</div></div>
+                    <div className="card" style={{ flex: 1, minWidth: 140 }}><div style={{ fontSize: 11, color: "var(--muted)" }}>Rata-rata penguasaan</div><div className="disp" style={{ fontSize: 22 }}>{guruAvgPct}%</div></div>
+                    <div className="card" style={{ flex: 1, minWidth: 140 }}><div style={{ fontSize: 11, color: "var(--muted)" }}>Konsep tersulit</div><div className="disp" style={{ fontSize: 16 }}>{guruHardestConcept}</div></div>
                   </div>
+                  {guruStudents.length === 0 && !guruLoading && (
+                    <p style={{ fontSize: 13.5, color: "var(--muted)" }}>Belum ada siswa yang terdaftar, atau belum ada aktivitas belajar.</p>
+                  )}
                   {CONCEPT_ORDER.map((c) => {
-                    const m = computeMastery(attempts[c]); const pct = m ? Math.round(m * 100) : 0; const st = statuses[c];
+                    const m = guruConceptMastery(c); const pct = m ? Math.round(m * 100) : 0;
+                    const st = m === null ? { tone: "neutral" } : (pct >= 75 ? { tone: "good" } : pct >= 40 ? { tone: "warn" } : { tone: "bad" });
                     return (
                       <div key={c} style={{ marginBottom: 12 }}>
-                        <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13 }}><span>{CONCEPTS[c].name}</span><span>{pct}%</span></div>
+                        <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13 }}><span>{CONCEPTS[c].name}</span><span>{m !== null ? pct + "%" : "–"}</span></div>
                         <div className="bar-track"><div className="bar-fill" style={{ width: pct + "%", background: toneColor[st.tone] }} /></div>
                       </div>
                     );
                   })}
+
+                  {guruStudents.length > 0 && (
+                    <div style={{ marginTop: 20 }}>
+                      <div className="tag-eyebrow">Daftar siswa</div>
+                      <table>
+                        <thead><tr><th>Nama</th><th>Progress</th></tr></thead>
+                        <tbody>
+                          {guruStudents.map((s) => (
+                            <tr key={s.uid}><td>{s.name}</td><td>{overallPctOf(s.attempts)}%</td></tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
                 </div>
               )}
 
               {guruTab === "analitik" && (
                 <div className="card">
-                  <div className="tag-eyebrow">Heatmap miskonsepsi (log sesi aktif)</div>
-                  {misconceptions.length === 0 && <p style={{ fontSize: 13.5, color: "var(--muted)" }}>Belum ada miskonsepsi terdeteksi pada sesi ini.</p>}
+                  <div className="tag-eyebrow">Heatmap miskonsepsi (seluruh siswa)</div>
+                  {allMisconceptions.length === 0 && <p style={{ fontSize: 13.5, color: "var(--muted)" }}>Belum ada miskonsepsi terdeteksi.</p>}
                   {CONCEPT_ORDER.map((c) => {
-                    const items = misconceptions.filter((m) => m.concept === c);
+                    const items = allMisconceptions.filter((m) => m.concept === c);
                     if (items.length === 0) return null;
                     const counts = {};
                     items.forEach((m) => { counts[m.tag] = (counts[m.tag] || 0) + 1; });
@@ -510,7 +718,7 @@ export default function App() {
                     );
                   })}
                   <div className="tag-eyebrow" style={{ marginTop: 14 }}>Catatan</div>
-                  <p style={{ fontSize: 12.5, color: "var(--muted)" }}>Prototype ini mensimulasikan satu siswa aktif. Di sistem nyata, heatmap ini diagregasi dari data banyak siswa lewat backend.</p>
+                  <p style={{ fontSize: 12.5, color: "var(--muted)" }}>Data diagregasi langsung dari akun-akun siswa yang tersimpan di database.</p>
                 </div>
               )}
 
