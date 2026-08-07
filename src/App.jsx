@@ -14,43 +14,199 @@ import {
 } from "firebase/firestore";
 
 // ---------------- DATA: Peta konsep (sesuai Knowledge Base) ----------------
+// ---------------- DATA: Peta konsep Eksponen (disesuaikan ATP Bab 1 - Kurikulum Merdeka, Fase E) ----------------
 const CONCEPTS = {
-  E1: { name: "Pangkat Positif", short: "aⁿ", prereq: [] },
-  E2: { name: "Pangkat Nol", short: "a⁰", prereq: ["E1"] },
-  E3: { name: "Pangkat Negatif", short: "a⁻ⁿ", prereq: ["E1"] },
-  E4: { name: "Pangkat Pecahan", short: "a^(m/n)", prereq: ["E1", "E2"] },
-  E5: { name: "Perkalian Pangkat Sama Basis", short: "aᵐ·aⁿ", prereq: ["E1"] },
-  E6: { name: "Persamaan Eksponen", short: "aˣ=b", prereq: ["E1", "E2", "E3", "E4", "E5"] },
+  E1:  { name: "Definisi Eksponen",            short: "aⁿ",        prereq: [] },
+  E2:  { name: "Sifat Perkalian Eksponen",      short: "aᵐ·aⁿ",     prereq: ["E1"] },
+  E3:  { name: "Sifat Pembagian Eksponen",      short: "aᵐ÷aⁿ",     prereq: ["E1"] },
+  E4:  { name: "Sifat Pangkat dari Pangkat",    short: "(aᵐ)ⁿ",     prereq: ["E1"] },
+  E5:  { name: "Sifat Distribusi Pangkat",      short: "(ab)ⁿ",     prereq: ["E1"] },
+  E6:  { name: "Eksponen Nol",                  short: "a⁰",        prereq: ["E3"] },
+  E7:  { name: "Eksponen Negatif",              short: "a⁻ⁿ",       prereq: ["E3", "E6"] },
+  E8:  { name: "Pangkat Pecahan & Bentuk Akar", short: "a^(m/n)",   prereq: ["E1", "E4"] },
+  E9:  { name: "Operasi Aljabar Bentuk Akar",   short: "√a ± √b",   prereq: ["E8"] },
+  E10: { name: "Fungsi & Model Eksponensial",   short: "y=a·bˣ",    prereq: ["E1", "E2"] },
+  E11: { name: "Persamaan Eksponen",            short: "aˣ=aʸ",     prereq: ["E1", "E2", "E3", "E4", "E6", "E7"] },
 };
-const CONCEPT_ORDER = ["E1", "E2", "E3", "E4", "E5", "E6"];
-const EMPTY_ATTEMPTS = { E1: [], E2: [], E3: [], E4: [], E5: [], E6: [] };
-const EMPTY_POOLIDX = { E1: 0, E2: 0, E3: 0, E4: 0, E5: 0, E6: 0 };
+const CONCEPT_ORDER = ["E1", "E2", "E3", "E4", "E5", "E6", "E7", "E8", "E9", "E10", "E11"];
+const EMPTY_ATTEMPTS = Object.fromEntries(CONCEPT_ORDER.map((c) => [c, []]));
+const EMPTY_POOLIDX = Object.fromEntries(CONCEPT_ORDER.map((c) => [c, 0]));
 
 const MATERI = {
-  E1: { formula: "aⁿ = a × a × ... (n kali)", penjelasan: "Pangkat positif berarti basis dikalikan dengan dirinya sendiri sebanyak n kali.", contoh: "2³ = 2 × 2 × 2 = 8" },
-  E2: { formula: "a⁰ = 1", penjelasan: "Bilangan apa pun (kecuali 0) yang dipangkatkan nol hasilnya selalu 1.", contoh: "7⁰ = 1" },
-  E3: { formula: "a⁻ⁿ = 1/aⁿ", penjelasan: "Pangkat negatif berarti kebalikan dari pangkat positifnya — bukan tanda minus di depan hasil.", contoh: "2⁻² = 1/2² = 1/4" },
-  E4: { formula: "a^(m/n) = ⁿ√aᵐ", penjelasan: "Pangkat pecahan berarti bentuk akar: pembilang jadi pangkat di dalam akar, penyebut jadi indeks akarnya.", contoh: "8^(1/3) = ³√8 = 2" },
-  E5: { formula: "aᵐ × aⁿ = aᵐ⁺ⁿ", penjelasan: "Kalau basisnya sama, cukup jumlahkan pangkatnya. Basisnya sendiri tidak berubah.", contoh: "3² × 3³ = 3⁵ = 243" },
-  E6: { formula: "aˣ = b", penjelasan: "Untuk mencari x, samakan dulu basis kedua ruas, baru samakan pangkatnya.", contoh: "2ˣ = 8 → 2ˣ = 2³ → x = 3" },
+  E1: {
+    formula: "aⁿ = a × a × a × ... × a  (sebanyak n faktor)",
+    penjelasan: "Eksponen (pangkat) adalah cara ringkas menuliskan perkalian berulang suatu bilangan (disebut basis) dengan dirinya sendiri sebanyak n kali (disebut pangkat atau eksponen). Bentuk umumnya ditulis aⁿ, dengan a sebagai basis dan n sebagai pangkat, di mana n adalah bilangan asli. Kesalahan paling umum adalah mengira aⁿ berarti a dikalikan n (padahal itu perkalian biasa, bukan perpangkatan).",
+    contoh: "2⁴ = 2 × 2 × 2 × 2 = 16\n5³ = 5 × 5 × 5 = 125\n(-3)² = (-3) × (-3) = 9, tapi -3² = -(3×3) = -9 (perhatikan letak tanda kurung!)",
+  },
+  E2: {
+    formula: "aᵐ × aⁿ = aᵐ⁺ⁿ",
+    penjelasan: "Jika dua bilangan berpangkat memiliki basis yang sama dan dikalikan, pangkatnya cukup dijumlahkan sementara basisnya tetap sama — tidak ikut dikalikan. Sifat ini berlaku karena aᵐ × aⁿ pada dasarnya menggabungkan (m+n) faktor a yang dikalikan berturut-turut. Sifat ini HANYA berlaku jika basisnya sama; 2³ × 3² TIDAK bisa disederhanakan dengan cara ini.",
+    contoh: "3² × 3³ = 3⁽²⁺³⁾ = 3⁵ = 243\nx⁴ × x = x⁴ × x¹ = x⁵\n2³ × 2⁻¹ = 2⁽³⁺⁽⁻¹⁾⁾ = 2² = 4",
+  },
+  E3: {
+    formula: "aᵐ ÷ aⁿ = aᵐ⁻ⁿ  (a ≠ 0)",
+    penjelasan: "Jika dua bilangan berpangkat dengan basis sama dibagi, pangkatnya dikurangkan (pangkat pembilang dikurangi pangkat penyebut), basis tetap sama. Sifat ini adalah kebalikan dari sifat perkalian eksponen. Kalau hasil pengurangan pangkatnya negatif atau nol, itu wajar — nanti akan menuntun ke konsep eksponen nol dan eksponen negatif.",
+    contoh: "5⁶ ÷ 5² = 5⁽⁶⁻²⁾ = 5⁴ = 625\na⁷ ÷ a⁷ = a⁽⁷⁻⁷⁾ = a⁰\n2³ ÷ 2⁵ = 2⁽³⁻⁵⁾ = 2⁻²",
+  },
+  E4: {
+    formula: "(aᵐ)ⁿ = aᵐˣⁿ",
+    penjelasan: "Pangkat yang dipangkatkan lagi (pangkat berpangkat) hasilnya adalah basis yang sama dipangkatkan dengan hasil kali kedua pangkatnya. Ini berbeda dengan sifat perkalian eksponen (aᵐ × aⁿ = aᵐ⁺ⁿ) — di sini pangkatnya DIKALIKAN, bukan dijumlahkan, karena (aᵐ)ⁿ berarti aᵐ dikalikan sebanyak n kali dengan dirinya sendiri.",
+    contoh: "(2³)² = 2⁽³ˣ²⁾ = 2⁶ = 64\n(x²)⁵ = x¹⁰\n(a³)⁰ = a⁰ = 1 (apa pun pangkat luar-nya, kalau pangkat dalamnya 0 hasilnya tetap terkait sifat eksponen nol)",
+  },
+  E5: {
+    formula: "(a × b)ⁿ = aⁿ × bⁿ   dan   (a ÷ b)ⁿ = aⁿ ÷ bⁿ  (b ≠ 0)",
+    penjelasan: "Jika perkalian atau pembagian dua bilangan dipangkatkan, pangkat itu bisa 'dibagikan' ke masing-masing bilangan di dalam kurung secara terpisah. Sifat ini sering keliru diterapkan pada penjumlahan/pengurangan — (a+b)ⁿ TIDAK SAMA DENGAN aⁿ + bⁿ, sifat distribusi pangkat ini hanya berlaku untuk perkalian dan pembagian di dalam kurung.",
+    contoh: "(2 × 3)² = 2² × 3² = 4 × 9 = 36\n(x/y)³ = x³/y³\n(2 + 3)² = 5² = 25, TAPI 2² + 3² = 4 + 9 = 13 (tidak sama! sifat ini tidak berlaku untuk penjumlahan)",
+  },
+  E6: {
+    formula: "a⁰ = 1   (a ≠ 0)",
+    penjelasan: "Bilangan apa pun (kecuali 0) yang dipangkatkan nol hasilnya selalu 1. Ini bisa dibuktikan dari sifat pembagian eksponen: aⁿ ÷ aⁿ = aⁿ⁻ⁿ = a⁰, padahal aⁿ ÷ aⁿ jelas sama dengan 1 (bilangan dibagi dirinya sendiri), sehingga a⁰ harus sama dengan 1. Catatan: 0⁰ tidak didefinisikan dalam matematika dasar.",
+    contoh: "7⁰ = 1\n100⁰ = 1\n(-5)⁰ = 1, tapi hasilnya BUKAN 0 dan BUKAN -5 — banyak yang keliru mengira pangkat nol membuat bilangannya hilang jadi 0",
+  },
+  E7: {
+    formula: "a⁻ⁿ = 1 / aⁿ   (a ≠ 0)",
+    penjelasan: "Pangkat negatif berarti kebalikan (pecahan 1 per basis-pangkat-positifnya) — BUKAN tanda minus di depan hasil akhir. Ini juga bisa diturunkan dari sifat pembagian: a⁰ ÷ aⁿ = a⁰⁻ⁿ = a⁻ⁿ, padahal a⁰ ÷ aⁿ = 1 ÷ aⁿ. Kesalahan paling sering: menganggap 2⁻² = -4 (padahal yang benar 2⁻² = 1/4).",
+    contoh: "2⁻² = 1/2² = 1/4\n5⁻¹ = 1/5\n3⁻³ = 1/3³ = 1/27 (bukan -27, bukan -9)",
+  },
+  E8: {
+    formula: "a^(m/n) = ⁿ√(aᵐ)   (a > 0)",
+    penjelasan: "Pangkat pecahan menghubungkan konsep eksponen dan bentuk akar (radikal): pembilang pecahan (m) menjadi pangkat di dalam tanda akar, sedangkan penyebutnya (n) menjadi indeks/tingkat akarnya. Kasus khusus yang penting: a^(1/n) = ⁿ√a (akar pangkat n biasa, tanpa pangkat tambahan di dalam).",
+    contoh: "8^(1/3) = ³√8 = 2\n16^(1/2) = √16 = 4\n4^(3/2) = √(4³) = √64 = 8, atau bisa juga (√4)³ = 2³ = 8 (hasilnya sama)",
+  },
+  E9: {
+    formula: "√a × √b = √(ab)     a√c ± b√c = (a±b)√c     rasionalkan: kalikan pembilang & penyebut dengan bentuk sekawan",
+    penjelasan: "Bentuk akar bisa dioperasikan seperti aljabar biasa dengan aturan tersendiri: (1) perkalian akar boleh digabung di bawah satu akar (√a × √b = √(ab)), (2) penjumlahan/pengurangan akar HANYA bisa digabung kalau bentuk akarnya sudah sejenis (sama bilangan di dalam akarnya) — mirip menjumlahkan suku sejenis pada aljabar, (3) untuk 'merasionalkan' penyebut yang mengandung akar, kalikan pembilang dan penyebut dengan bentuk sekawannya supaya akar di penyebut hilang.",
+    contoh: "√2 × √8 = √16 = 4\n3√5 + 2√5 = 5√5 (sejenis, boleh dijumlahkan langsung)\n√3 + √5 TIDAK BISA disederhanakan lagi (tidak sejenis)\nMerasionalkan 1/√2 = (1×√2)/(√2×√2) = √2/2",
+  },
+  E10: {
+    formula: "y = a · bˣ   (a = nilai awal, b = faktor pertumbuhan/peluruhan, b > 0, b ≠ 1)",
+    penjelasan: "Fungsi eksponensial memodelkan fenomena yang berubah dengan laju berlipat (bukan bertambah tetap seperti fungsi linear). Jika b > 1, fungsi menggambarkan PERTUMBUHAN (grafik naik semakin curam) — contoh: perkembangbiakan bakteri, bunga majemuk. Jika 0 < b < 1, fungsi menggambarkan PELURUHAN (grafik turun mendekati nol) — contoh: peluruhan zat radioaktif, penyusutan nilai barang. Grafik fungsi eksponensial selalu memotong sumbu-y di titik (0, a) dan tidak pernah menyentuh sumbu-x (mendekati nol tapi tidak pernah 0), disebut asimtot datar.",
+    contoh: "Populasi bakteri awal 100, berlipat 2 kali tiap jam: N(t) = 100 · 2ᵗ → pertumbuhan (b=2>1)\nNilai motor Rp20 juta menyusut 10% tiap tahun: V(t) = 20.000.000 · (0,9)ᵗ → peluruhan (b=0,9, antara 0 dan 1)",
+  },
+  E11: {
+    formula: "Jika aˣ = aʸ (basis sama, a > 0, a ≠ 1), maka x = y",
+    penjelasan: "Untuk menyelesaikan persamaan eksponen aˣ = b, langkah utamanya adalah menyamakan dulu basis di kedua ruas (ubah b menjadi bentuk pangkat dari a), baru pangkat kedua ruas bisa langsung disamakan menjadi persamaan biasa yang lebih sederhana untuk dicari x-nya. Kadang perlu menggunakan sifat-sifat eksponen sebelumnya (perkalian, pembagian, pangkat berpangkat) untuk menyederhanakan salah satu ruas terlebih dahulu sebelum basisnya bisa disamakan.",
+    contoh: "2ˣ = 8 → 2ˣ = 2³ → x = 3\n3^(2x) = 81 → 3^(2x) = 3⁴ → 2x = 4 → x = 2\n5^(x+1) = 125 → 5^(x+1) = 5³ → x+1 = 3 → x = 2",
+  },
 };
 
 const HINTS = {
-  E1: { t1: "Ingat: pangkat berarti basis dikalikan dengan dirinya sendiri sebanyak pangkatnya — bukan basis dikali pangkat.", t2: "Contoh: 2³ = 2 × 2 × 2 = 8 (bukan 2 × 3 = 6).", full: "2³ artinya 2 dikalikan 3 kali berturut-turut: 2 × 2 × 2 = 8." },
-  E2: { t1: "Ingat: a⁰ = 1 berlaku untuk semua a ≠ 0 — hasilnya bukan 0, dan bukan a itu sendiri.", t2: "Contoh: 4⁰ = 1, sama seperti 100⁰ = 1.", full: "Berapa pun basisnya (asal bukan 0), pangkat nol selalu sama dengan 1." },
-  E3: { t1: "Pangkat negatif berarti kebalikan (1 per basis-pangkat-positifnya), bukan tanda minus di depan hasil.", t2: "Contoh: 3⁻² = 1/3² = 1/9.", full: "a⁻ⁿ = 1/aⁿ. Jadi 2⁻² = 1/2² = 1/4 — bukan −4 dan bukan 4." },
-  E4: { t1: "Ingat: pangkat pecahan berarti bentuk akar — a^(m/n) = akar pangkat n dari aᵐ, bukan a dibagi n.", t2: "Contoh: 8^(1/3) = akar pangkat 3 dari 8 = 2 (bukan 8/3).", full: "a^(m/n) = ⁿ√(aᵐ). Ubah dulu ke bentuk akar sebelum menghitung." },
-  E5: { t1: "Kalau basisnya sama, pangkatnya dijumlahkan — basisnya sendiri tidak berubah dan tidak ikut dikalikan.", t2: "Contoh: 3² × 3³ = 3⁽²⁺³⁾ = 3⁵ = 243.", full: "aᵐ × aⁿ = aᵐ⁺ⁿ. Basis tetap sama, hanya pangkatnya yang dijumlahkan." },
-  E6: { t1: "Untuk menyelesaikan aˣ = b, samakan dulu basis kedua ruas, baru samakan pangkatnya.", t2: "Contoh: 2ˣ = 8 → 2ˣ = 2³ → x = 3.", full: "Kalau basis kedua ruas bisa disamakan, pangkatnya pasti sama, sehingga x bisa langsung dibaca dari situ." },
+  E1: {
+    t1: "Ingat: aⁿ berarti a dikalikan dengan dirinya sendiri sebanyak n kali — bukan a dikali n.",
+    t2: "Tulis dulu perkaliannya secara lengkap sebelum dihitung, misalnya 2⁴ = 2 × 2 × 2 × 2, baru kalikan satu per satu.",
+    full: "2⁴ artinya 2 dikalikan sebanyak 4 kali: 2 × 2 × 2 × 2 = 16. Hati-hati juga dengan tanda kurung: (-2)² = 4, tapi -2² = -4.",
+  },
+  E2: {
+    t1: "Basis harus sama dulu baru pangkatnya bisa dijumlahkan — basisnya sendiri TIDAK ikut dikalikan atau berubah.",
+    t2: "Contoh: 2³ × 2² = 2⁽³⁺²⁾ = 2⁵ (bukan 4⁵, dan bukan 2⁶).",
+    full: "aᵐ × aⁿ = aᵐ⁺ⁿ. Basis (a) tetap sama, hanya pangkatnya (m dan n) yang dijumlahkan.",
+  },
+  E3: {
+    t1: "Basis harus sama dulu baru pangkatnya bisa dikurangkan — pangkat pembilang dikurangi pangkat penyebut.",
+    t2: "Contoh: 5⁴ ÷ 5² = 5⁽⁴⁻²⁾ = 5² (bukan 5², eh maksudnya bukan hasil pembagian biasa 5/5=1 dulu baru dipangkatkan).",
+    full: "aᵐ ÷ aⁿ = aᵐ⁻ⁿ. Kalau hasil pengurangan pangkatnya negatif, itu wajar — hasilnya akan berbentuk pecahan (pangkat negatif).",
+  },
+  E4: {
+    t1: "Pangkat berpangkat berarti kedua pangkatnya DIKALIKAN, bukan dijumlahkan seperti pada perkalian eksponen biasa.",
+    t2: "Contoh: (3²)³ = 3⁽²ˣ³⁾ = 3⁶ (bukan 3⁵).",
+    full: "(aᵐ)ⁿ = aᵐˣⁿ. Jangan tertukar dengan aᵐ × aⁿ = aᵐ⁺ⁿ — perhatikan apakah ada tanda kurung pangkat berpangkat atau tanda kali antar dua bilangan berpangkat.",
+  },
+  E5: {
+    t1: "Sifat ini hanya berlaku untuk PERKALIAN atau PEMBAGIAN di dalam kurung, tidak berlaku untuk penjumlahan/pengurangan.",
+    t2: "Contoh: (2×3)² = 2²×3² = 36, tapi (2+3)² = 5² = 25 (BUKAN 2²+3²=13).",
+    full: "(a×b)ⁿ = aⁿ×bⁿ dan (a÷b)ⁿ = aⁿ÷bⁿ. Pangkat di luar kurung dibagikan ke setiap faktor yang dikalikan/dibagi di dalamnya — tapi tidak berlaku kalau di dalam kurung ada tanda tambah atau kurang.",
+  },
+  E6: {
+    t1: "Ingat: a⁰ = 1 berlaku untuk semua a ≠ 0 — hasilnya bukan 0, dan bukan a itu sendiri.",
+    t2: "Contoh: 9⁰ = 1, sama seperti 250⁰ = 1 — berapa pun basisnya (asal bukan 0), hasilnya tetap 1.",
+    full: "Ini bisa dibuktikan lewat sifat pembagian: aⁿ÷aⁿ = aⁿ⁻ⁿ = a⁰, padahal aⁿ÷aⁿ pasti = 1 (bilangan dibagi dirinya sendiri). Jadi a⁰ = 1.",
+  },
+  E7: {
+    t1: "Pangkat negatif berarti KEBALIKAN (1 per basis-pangkat-positifnya) — bukan tanda minus di depan hasil.",
+    t2: "Contoh: 4⁻¹ = 1/4¹ = 1/4 (bukan -4).",
+    full: "a⁻ⁿ = 1/aⁿ. Jadi 3⁻² = 1/3² = 1/9 — bukan -9 dan bukan -1/9.",
+  },
+  E8: {
+    t1: "Ingat: pangkat pecahan berarti bentuk akar — a^(m/n) = akar pangkat n dari aᵐ, bukan a dibagi n.",
+    t2: "Contoh: 27^(1/3) = akar pangkat 3 dari 27 = 3 (bukan 27/3 = 9).",
+    full: "a^(m/n) = ⁿ√(aᵐ). Pembilang pangkat (m) masuk ke dalam akar, penyebut pangkat (n) jadi indeks/tingkat akarnya.",
+  },
+  E9: {
+    t1: "Penjumlahan/pengurangan bentuk akar hanya bisa digabung kalau bilangan di dalam akarnya SAMA (sejenis).",
+    t2: "Contoh: 2√3 + 5√3 = 7√3 (sejenis, boleh), tapi 2√3 + 5√2 tidak bisa disederhanakan (tidak sejenis).",
+    full: "Untuk perkalian, √a×√b = √(ab) selalu boleh digabung. Untuk merasionalkan penyebut berbentuk akar, kalikan pembilang & penyebut dengan bentuk yang sama supaya akar di penyebut hilang.",
+  },
+  E10: {
+    t1: "Perhatikan nilai b (faktor pengali): kalau b > 1 itu pertumbuhan (naik), kalau 0 < b < 1 itu peluruhan (turun).",
+    t2: "Nilai awal (saat x=0) selalu sama dengan a, karena bˣ menjadi b⁰=1 sehingga y = a×1 = a.",
+    full: "y = a·bˣ. Grafik selalu mendekati sumbu-x tapi tidak pernah menyentuhnya (asimtot). Growth: b>1, Decay: 0<b<1.",
+  },
+  E11: {
+    t1: "Untuk menyelesaikan aˣ = b, samakan dulu basis kedua ruas (ubah b jadi bentuk pangkat dari a).",
+    t2: "Contoh: 2ˣ = 16 → ubah 16 jadi 2⁴ → 2ˣ = 2⁴ → x = 4.",
+    full: "Kalau basis kedua ruas sudah sama, pangkatnya pasti sama juga, sehingga x bisa langsung dibaca. Kadang perlu sifat eksponen lain dulu untuk menyederhanakan salah satu ruas.",
+  },
 };
 
 const PRACTICE_POOL = {
-  E1: [{ text: "2⁴ = ?", options: [{ text: "16", correct: true }, { text: "8" }, { text: "6" }] }, { text: "5³ = ?", options: [{ text: "125", correct: true }, { text: "15" }, { text: "8" }] }],
-  E2: [{ text: "12⁰ = ?", options: [{ text: "1", correct: true }, { text: "0" }, { text: "12" }] }, { text: "9⁰ = ?", options: [{ text: "1", correct: true }, { text: "0" }, { text: "9" }] }],
-  E3: [{ text: "3⁻² = ?", options: [{ text: "1/9", correct: true }, { text: "−9" }, { text: "9" }] }, { text: "5⁻¹ = ?", options: [{ text: "1/5", correct: true }, { text: "−5" }, { text: "5" }] }],
-  E4: [{ text: "27^(1/3) = ?", options: [{ text: "3", correct: true }, { text: "9" }, { text: "24" }] }, { text: "16^(1/2) = ?", options: [{ text: "4", correct: true }, { text: "8" }, { text: "256" }] }],
-  E5: [{ text: "3² × 3³ = ?", options: [{ text: "3⁵ (=243)", correct: true }, { text: "3⁶" }, { text: "9⁵" }] }, { text: "5 × 5² = ?", options: [{ text: "5³ (=125)", correct: true }, { text: "5²" }, { text: "25²" }] }],
-  E6: [{ text: "3ˣ = 9, x = ?", options: [{ text: "2", correct: true }, { text: "3" }, { text: "9" }] }, { text: "5ˣ = 125, x = ?", options: [{ text: "3", correct: true }, { text: "5" }, { text: "25" }] }],
+  E1: [
+    { text: "2⁵ = ?", options: [{ text: "32", correct: true }, { text: "10", tag: "Mengira pangkat = basis dikali pangkat (2×5)" }, { text: "7", tag: "Mengira pangkat = basis ditambah pangkat (2+5)" }] },
+    { text: "(-3)⁴ = ?", options: [{ text: "81", correct: true }, { text: "-81", tag: "Lupa bahwa pangkat genap dari bilangan negatif hasilnya positif" }, { text: "-12", tag: "Mengira pangkat = basis dikali pangkat" }] },
+    { text: "-2⁴ = ? (tanpa kurung di depan angka 2)", options: [{ text: "-16", correct: true }, { text: "16", tag: "Keliru menganggap tanda minus ikut dipangkatkan padahal tidak ada kurung" }, { text: "-8", tag: "Salah hitung perkalian berulang" }] },
+    { text: "Volume kubus dengan panjang rusuk 6 cm adalah s³. Berapa volumenya?", options: [{ text: "216 cm³", correct: true }, { text: "18 cm³", tag: "Mengira pangkat 3 berarti dikali 3" }, { text: "36 cm³", tag: "Hanya menghitung s² (luas alas), lupa dikali satu s lagi" }] },
+  ],
+  E2: [
+    { text: "3² × 3³ = ?", options: [{ text: "3⁵", correct: true }, { text: "3⁶", tag: "Mengira pangkat harus dikalikan (2×3), bukan dijumlahkan" }, { text: "9⁵", tag: "Ikut mengalikan basisnya padahal basis tetap sama" }] },
+    { text: "x⁴ × x³ × x = ?", options: [{ text: "x⁸", correct: true }, { text: "x¹²", tag: "Mengira pangkat harus dikalikan semua (4×3×1)" }, { text: "x⁷", tag: "Lupa menghitung x tunggal sebagai x pangkat 1" }] },
+    { text: "2³ × 2⁻¹ = ?", options: [{ text: "2² = 4", correct: true }, { text: "2⁴ = 16", tag: "Salah menjumlahkan pangkat negatif, menganggap -1 jadi +1" }, { text: "2⁻³ = 1/8", tag: "Salah tanda saat menjumlahkan pangkat" }] },
+    { text: "5² × 5³ × 5⁻² = ?", options: [{ text: "5³ = 125", correct: true }, { text: "5⁷ = 78125", tag: "Salah menjumlahkan, tidak memperhitungkan pangkat negatif dengan benar" }, { text: "5⁻¹ = 1/5", tag: "Salah hitung penjumlahan pangkat" }] },
+  ],
+  E3: [
+    { text: "7⁶ ÷ 7² = ?", options: [{ text: "7⁴", correct: true }, { text: "7³", tag: "Salah hitung pengurangan pangkat (6-2 dihitung keliru)" }, { text: "1⁴", tag: "Basisnya ikut dibagi/hilang, padahal basis tetap sama" }] },
+    { text: "x⁵ ÷ x⁸ = ?", options: [{ text: "x⁻³", correct: true }, { text: "x³", tag: "Lupa memperhatikan urutan pengurangan (5-8, bukan 8-5)" }, { text: "x⁻¹³", tag: "Menjumlahkan pangkat, bukan mengurangkan" }] },
+    { text: "(4⁵ × 4²) ÷ 4³ = ?", options: [{ text: "4⁴", correct: true }, { text: "4¹⁰", tag: "Salah urutan operasi, langsung mengalikan semua pangkat" }, { text: "4⁻⁴", tag: "Salah tanda saat mengurangkan pangkat total" }] },
+  ],
+  E4: [
+    { text: "(2³)² = ?", options: [{ text: "2⁶ = 64", correct: true }, { text: "2⁵ = 32", tag: "Mengira pangkat berpangkat dijumlahkan (3+2), bukan dikalikan" }, { text: "2⁹ = 512", tag: "Salah kalikan pangkat, hasil dikalikan basisnya juga" }] },
+    { text: "(x⁴)³ = ?", options: [{ text: "x¹²", correct: true }, { text: "x⁷", tag: "Menjumlahkan pangkat seperti sifat perkalian eksponen" }, { text: "x⁶⁴", tag: "Salah hitung, memangkatkan pangkat bukan mengalikan" }] },
+    { text: "((3²)²)² = ?", options: [{ text: "3⁸ = 6561", correct: true }, { text: "3⁶ = 729", tag: "Salah mengalikan ketiga pangkat berturut-turut" }, { text: "3⁴ = 81", tag: "Hanya menghitung satu tingkat pangkat, mengabaikan tingkat lainnya" }] },
+  ],
+  E5: [
+    { text: "(2 × 5)³ = ?", options: [{ text: "2³ × 5³ = 1000", correct: true }, { text: "2 × 5³ = 250", tag: "Hanya memangkatkan salah satu faktor, bukan keduanya" }, { text: "2³ × 5 = 40", tag: "Hanya memangkatkan salah satu faktor" }] },
+    { text: "(x/y)⁴ = ?", options: [{ text: "x⁴/y⁴", correct: true }, { text: "x⁴/y", tag: "Hanya memangkatkan pembilang, penyebut tidak ikut dipangkatkan" }, { text: "x/y⁴", tag: "Hanya memangkatkan penyebut, pembilang tidak ikut dipangkatkan" }] },
+    { text: "(3 + 4)² sama dengan...?", options: [{ text: "49 (bukan 3²+4²)", correct: true }, { text: "3² + 4² = 25", tag: "Keliru menerapkan sifat distribusi pangkat pada penjumlahan (tidak berlaku)" }, { text: "3² × 4² = 144", tag: "Keliru mengira penjumlahan berubah jadi perkalian" }] },
+  ],
+  E6: [
+    { text: "15⁰ = ?", options: [{ text: "1", correct: true }, { text: "0", tag: "Mengira pangkat nol membuat bilangan menjadi nol" }, { text: "15", tag: "Mengira pangkat nol tidak mengubah apa-apa pada basis" }] },
+    { text: "(-8)⁰ = ?", options: [{ text: "1", correct: true }, { text: "-1", tag: "Mengira tanda negatif basis ikut memengaruhi hasil pangkat nol" }, { text: "0", tag: "Mengira pangkat nol membuat bilangan menjadi nol" }] },
+    { text: "5x⁰ = ? (untuk x ≠ 0)", options: [{ text: "5", correct: true }, { text: "0", tag: "Mengira x⁰ membuat seluruh suku menjadi nol" }, { text: "5x", tag: "Mengabaikan bahwa x⁰ = 1, bukan x" }] },
+  ],
+  E7: [
+    { text: "4⁻² = ?", options: [{ text: "1/16", correct: true }, { text: "-16", tag: "Mengira pangkat negatif berarti hasilnya jadi negatif" }, { text: "-8", tag: "Salah menghitung, mencampur tanda negatif dengan perkalian" }] },
+    { text: "2⁻³ = ?", options: [{ text: "1/8", correct: true }, { text: "-8", tag: "Mengira pangkat negatif membuat hasil akhirnya negatif" }, { text: "-1/8", tag: "Sudah paham bentuk pecahan tapi salah menambahkan tanda minus" }] },
+    { text: "(1/3)⁻² = ?", options: [{ text: "9", correct: true }, { text: "1/9", tag: "Lupa bahwa pangkat negatif pada pecahan membalik pecahannya" }, { text: "-9", tag: "Mengira hasil pangkat negatif harus negatif" }] },
+  ],
+  E8: [
+    { text: "27^(1/3) = ?", options: [{ text: "3", correct: true }, { text: "9", tag: "Mengira a^(1/n) = a/n (dibagi n), bukan akar pangkat n" }, { text: "24", tag: "Salah operasi, mengurangkan alih-alih mengakarkan" }] },
+    { text: "16^(3/4) = ?", options: [{ text: "8", correct: true }, { text: "12", tag: "Mengira pangkat pecahan dihitung dengan perkalian langsung (16×3/4)" }, { text: "64", tag: "Hanya menghitung 16³ tanpa mengakarkan pangkat 4" }] },
+    { text: "9^(1/2) = ?", options: [{ text: "3", correct: true }, { text: "4,5", tag: "Mengira a^(1/2) = a/2 (dibagi 2), bukan akar kuadrat" }, { text: "18", tag: "Salah operasi, mengalikan bukan mengakarkan" }] },
+  ],
+  E9: [
+    { text: "3√2 + 5√2 = ?", options: [{ text: "8√2", correct: true }, { text: "8√4", tag: "Ikut menjumlahkan angka di dalam akar padahal seharusnya tetap" }, { text: "15√2", tag: "Mengalikan koefisien alih-alih menjumlahkan" }] },
+    { text: "√3 × √12 = ?", options: [{ text: "6", correct: true }, { text: "√15", tag: "Menjumlahkan angka di dalam akar, padahal seharusnya dikalikan" }, { text: "36", tag: "Lupa mengakarkan hasil akhir setelah perkalian di dalam akar" }] },
+    { text: "7√5 - 2√5 = ?", options: [{ text: "5√5", correct: true }, { text: "5√0", tag: "Ikut mengurangkan angka di dalam akar" }, { text: "9√5", tag: "Menjumlahkan alih-alih mengurangkan koefisien" }] },
+  ],
+  E10: [
+    { text: "Sebuah fungsi y = 50 · (1,2)ˣ menggambarkan...?", options: [{ text: "Pertumbuhan, karena faktor pengalinya (1,2) lebih dari 1", correct: true }, { text: "Peluruhan, karena angka 1,2 dianggap kecil", tag: "Tidak memahami syarat b>1 untuk pertumbuhan" }, { text: "Tidak bisa ditentukan tanpa tahu nilai x", tag: "Tidak memahami bahwa sifat naik/turun ditentukan oleh nilai b, bukan x" }] },
+    { text: "Fungsi y = 200 · (0,85)ˣ menggambarkan peluruhan. Berapa nilai y saat x = 0?", options: [{ text: "200", correct: true }, { text: "0", tag: "Mengira nilai awal fungsi eksponensial selalu 0" }, { text: "170", tag: "Salah menghitung, mengira x=0 berarti dikalikan langsung dengan 0,85" }] },
+    { text: "Manakah yang merupakan CIRI grafik fungsi eksponensial peluruhan?", options: [{ text: "Grafik menurun mendekati sumbu-x tapi tidak pernah menyentuhnya", correct: true }, { text: "Grafik berupa garis lurus yang menurun", tag: "Tertukar dengan ciri grafik fungsi linear" }, { text: "Grafik menyentuh sumbu-x lalu berbalik naik", tag: "Tidak memahami konsep asimtot pada fungsi eksponensial" }] },
+  ],
+  E11: [
+    { text: "2ˣ = 32, x = ?", options: [{ text: "5", correct: true }, { text: "16", tag: "Salah mengubah 32 menjadi bentuk pangkat basis 2" }, { text: "30", tag: "Mengurangkan basis dari hasil, bukan menyamakan pangkat" }] },
+    { text: "3^(2x) = 81, x = ?", options: [{ text: "2", correct: true }, { text: "4", tag: "Lupa membagi 2 setelah menyamakan pangkat (2x=4, bukan x=4)" }, { text: "8", tag: "Salah mengubah 81 menjadi bentuk pangkat basis 3" }] },
+    { text: "5^(x-1) = 125, x = ?", options: [{ text: "4", correct: true }, { text: "3", tag: "Lupa menambahkan 1 kembali setelah menyamakan pangkat" }, { text: "2", tag: "Salah mengubah 125 menjadi bentuk pangkat basis 5" }] },
+    { text: "4^x = 8^(x-1), x = ? (petunjuk: ubah kedua ruas ke basis 2)", options: [{ text: "3", correct: true }, { text: "1", tag: "Tidak menyamakan basis terlebih dahulu sebelum menyamakan pangkat" }, { text: "-3", tag: "Salah tanda saat menyelesaikan persamaan linear hasil penyamaan pangkat" }] },
+  ],
 };
 
 const KB_ROWS = CONCEPT_ORDER.map((c) => ({
@@ -285,17 +441,11 @@ export default function App() {
   }, [attempts]);
 
   function pickNextConcept() {
-    const remaining = CONCEPT_ORDER.filter((c) => statuses[c].label !== "Dikuasai");
-    if (remaining.length === 0) return null;
-    remaining.sort((a, b) => (computeMastery(attempts[a]) ?? 0) - (computeMastery(attempts[b]) ?? 0));
-    let target = remaining[0];
-    const weakPrereq = CONCEPTS[target].prereq.find((p) => (computeMastery(attempts[p]) ?? 0) < 0.5 && statuses[p].label !== "Dikuasai");
-    if (weakPrereq) {
-      setRedirectNote(`Kamu belum kuat di ${CONCEPTS[weakPrereq].name} (prasyarat ${CONCEPTS[target].name}) — diarahkan ke sana dulu.`);
-      target = weakPrereq;
-    } else {
-      setRedirectNote(null);
-    }
+    // Berurutan sesuai kurikulum (CONCEPT_ORDER) — tidak lompat ke konsep lain berdasarkan skor terendah,
+    // supaya alur belajar terasa runtut: baca materi konsep X, langsung latihan konsep X yang sama.
+    const target = CONCEPT_ORDER.find((c) => statuses[c].label !== "Dikuasai");
+    if (!target) return null;
+    setRedirectNote(null);
     return target;
   }
 
@@ -586,7 +736,7 @@ export default function App() {
             </div>
           </aside>
 
-          <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column" }}>
+          <div className="app-main-scroll" style={{ display: "flex", flexDirection: "column" }}>
             {profile.role === "siswa" && (
               <div className="body-area">
                 {!progressLoaded && (
@@ -650,7 +800,8 @@ export default function App() {
                     <div className="tag-eyebrow">Materi · {CONCEPTS[activeConcept].name}</div>
                     <div className="qtext">{MATERI[activeConcept].formula}</div>
                     <p style={{ fontSize: 14, lineHeight: 1.6 }}>{MATERI[activeConcept].penjelasan}</p>
-                    <div style={{ background: "var(--paper-2)", borderRadius: 10, padding: 14, marginTop: 10, fontFamily: "'IBM Plex Mono'", fontSize: 14 }}>Contoh: {MATERI[activeConcept].contoh}</div>
+                    <div style={{ background: "var(--paper-2)", borderRadius: 10, padding: 14, marginTop: 10, fontFamily: "'IBM Plex Mono'", fontSize: 13.5, whiteSpace: "pre-line", lineHeight: 1.8 }}>Contoh:
+{MATERI[activeConcept].contoh}</div>
                     <div style={{ marginTop: 18, display: "flex", gap: 10 }}>
                       <button className="btn-ghost" onClick={() => setScreen("dashboard")}><ArrowLeft size={14} /> Kembali</button>
                       <button className="btn-primary" onClick={() => setScreen("latihan")}>Latihan <ArrowRight size={15} /></button>
@@ -916,8 +1067,9 @@ function GlobalStyle() {
         .inputwrap { position:relative; }
         .inputwrap svg { position:absolute; left:12px; top:50%; transform:translateY(-50%); color:var(--muted); }
         .inputwrap input { padding-left:36px; }
-        .app-shell { display:flex; min-height:560px; }
-        .sidebar { width:216px; flex-shrink:0; background:white; border-right:1px solid var(--line); padding:18px 14px; display:flex; flex-direction:column; }
+        .app-shell { display:flex; height:640px; max-height:80vh; }
+        .sidebar { width:216px; flex-shrink:0; background:white; border-right:1px solid var(--line); padding:18px 14px; display:flex; flex-direction:column; position:sticky; top:0; align-self:flex-start; height:100%; overflow-y:auto; }
+        .app-main-scroll { flex:1; min-width:0; overflow-y:auto; height:100%; }
         .sidebar-nav { display:flex; flex-direction:column; gap:3px; margin-top:18px; flex:1; }
         .sidebar-navbtn { display:flex; align-items:center; gap:10px; padding:10px 12px; border-radius:12px; border:none; background:none; color:var(--muted); font-size:13.5px; font-weight:600; text-align:left; width:100%; }
         .sidebar-navbtn.active { background:var(--brand-light); color:var(--brand-dark); }
@@ -928,8 +1080,9 @@ function GlobalStyle() {
         .streak-chip { display:inline-flex; align-items:center; gap:5px; background:var(--amber-light); color:#9A6414; padding:5px 12px; border-radius:999px; font-size:12.5px; font-weight:700; }
         .xp-chip { display:inline-flex; align-items:center; gap:5px; background:var(--plum-light); color:var(--plum); padding:5px 12px; border-radius:999px; font-size:12.5px; font-weight:700; }
         @media (max-width:680px) {
-          .app-shell { flex-direction:column; }
-          .sidebar { width:100%; flex-direction:row; align-items:center; overflow-x:auto; padding:10px 12px; border-right:none; border-bottom:1px solid var(--line); }
+          .app-shell { flex-direction:column; height:auto; max-height:none; }
+          .sidebar { width:100%; height:auto; position:sticky; top:0; z-index:5; flex-direction:row; align-items:center; overflow-x:auto; overflow-y:visible; padding:10px 12px; border-right:none; border-bottom:1px solid var(--line); }
+          .app-main-scroll { overflow-y:visible; height:auto; }
           .sidebar-brand, .sidebar-profile-card { display:none; }
           .sidebar-nav { flex-direction:row; margin-top:0; gap:4px; }
           .sidebar-navbtn { flex-direction:column; gap:2px; font-size:10px; padding:8px 10px; white-space:nowrap; }
