@@ -235,6 +235,14 @@ function overallPctOf(attempts) {
   return Math.round((tested.reduce((a, b) => a + b, 0) / CONCEPT_ORDER.length) * 100);
 }
 const toneColor = { good: "var(--teal)", warn: "var(--amber)", bad: "var(--rose)", neutral: "var(--muted)" };
+const AVATAR_GRADIENTS = [
+  "linear-gradient(135deg,#7C5CFC,#F472B6)",
+  "linear-gradient(135deg,#1FAE7F,#38BDF8)",
+  "linear-gradient(135deg,#F5A524,#F0466E)",
+  "linear-gradient(135deg,#8B5CF6,#38BDF8)",
+  "linear-gradient(135deg,#F0466E,#F5A524)",
+  "linear-gradient(135deg,#0EA5E9,#7C5CFC)",
+];
 
 // ---------------- Gamifikasi: XP, Level, Badge (dihitung otomatis dari data yang ada) ----------------
 function computeXp(attempts) {
@@ -355,6 +363,11 @@ export default function App() {
   const [leaderboardStudents, setLeaderboardStudents] = useState([]);
   const [leaderboardLoading, setLeaderboardLoading] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [editingProfil, setEditingProfil] = useState(false);
+  const [editName, setEditName] = useState("");
+  const [editKelas, setEditKelas] = useState("");
+  const [editAvatarColor, setEditAvatarColor] = useState(0);
+  const [savingProfil, setSavingProfil] = useState(false);
 
   // ---------- Navigasi ----------
   const [screen, setScreen] = useState("dashboard"); // dashboard | materi | latihan | diagnosis | hint | progress | profil | komikList | komikChapter
@@ -514,7 +527,28 @@ export default function App() {
     setGuruStudents([]);
   }
 
+  function startEditProfil() {
+    setEditName(profile.name || "");
+    setEditKelas(profile.kelas || "");
+    setEditAvatarColor(profile.avatarColor || 0);
+    setEditingProfil(true);
+  }
+
+  async function saveProfil() {
+    if (!editName.trim() || !authUser) return;
+    setSavingProfil(true);
+    try {
+      const updates = { name: editName.trim(), avatarColor: editAvatarColor };
+      if (profile.role === "siswa") updates.kelas = editKelas.trim();
+      await setDoc(doc(db, "users", authUser.uid), updates, { merge: true });
+      setProfile((p) => ({ ...p, ...updates }));
+      setEditingProfil(false);
+    } catch (e) {}
+    setSavingProfil(false);
+  }
+
   const overallPct = useMemo(() => overallPctOf(attempts), [attempts]);
+  useEffect(() => { if (screen !== "profil") setEditingProfil(false); }, [screen]);
   const xp = useMemo(() => computeXp(attempts), [attempts]);
   const { level, xpInLevel, xpTarget } = useMemo(() => computeLevel(xp), [xp]);
   const badgeStats = useMemo(() => computeBadgeStats(attempts, statuses, streak), [attempts, statuses, streak]);
@@ -710,7 +744,8 @@ export default function App() {
               <nav className="sidebar-nav">
                 <button className={"sidebar-navbtn" + (screen === "dashboard" ? " active" : "")} onClick={() => setScreen("dashboard")}><LayoutDashboard size={17} />Dashboard</button>
                 <button className={"sidebar-navbtn" + (screen === "tutorAI" ? " active" : "")} onClick={() => setScreen("tutorAI")}><MessageCircle size={17} />Tutor AI</button>
-                <button className={"sidebar-navbtn" + (screen === "latihan" || screen === "diagnosis" || screen === "hint" || screen === "materi" ? " active" : "")} onClick={() => setScreen("latihan")}><PenLine size={17} />Latihan</button>
+                <button className={"sidebar-navbtn" + (screen === "materiList" || screen === "materi" ? " active" : "")} onClick={() => setScreen("materiList")}><BookOpen size={17} />Materi</button>
+                <button className={"sidebar-navbtn" + (screen === "latihan" || screen === "diagnosis" || screen === "hint" ? " active" : "")} onClick={goStudy}><PenLine size={17} />Latihan</button>
                 <button className={"sidebar-navbtn" + (screen === "progress" ? " active" : "")} onClick={() => setScreen("progress")}><TrendingUp size={17} />Progress</button>
                 <button className={"sidebar-navbtn" + (screen === "leaderboard" ? " active" : "")} onClick={() => setScreen("leaderboard")}><Trophy size={17} />Peringkat</button>
                 <button className={"sidebar-navbtn" + (screen === "badges" ? " active" : "")} onClick={() => setScreen("badges")}><Award size={17} />Koleksi Badge</button>
@@ -727,7 +762,7 @@ export default function App() {
             )}
 
             <div className="sidebar-profile-card">
-              <div className="avatar">{(profile.name || "?").trim().charAt(0).toUpperCase()}</div>
+              <div className="avatar" style={{ background: AVATAR_GRADIENTS[profile.avatarColor || 0] }}>{(profile.name || "?").trim().charAt(0).toUpperCase()}</div>
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ fontSize: 12.5, fontWeight: 700, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{profile.name || "Pengguna"}</div>
                 <div style={{ fontSize: 10.5, color: "var(--muted)" }}>{profile.role === "siswa" ? "Siswa" : "Guru"}</div>
@@ -735,6 +770,27 @@ export default function App() {
               <button className="btn-ghost" style={{ padding: 7 }} onClick={logout} title="Keluar"><LogOut size={13} /></button>
             </div>
           </aside>
+
+          {profile.role === "siswa" && (
+            <nav className="floating-nav">
+              <button className={"sidebar-navbtn" + (screen === "dashboard" ? " active" : "")} onClick={() => setScreen("dashboard")}><LayoutDashboard size={17} />Home</button>
+              <button className={"sidebar-navbtn" + (screen === "tutorAI" ? " active" : "")} onClick={() => setScreen("tutorAI")}><MessageCircle size={17} />Tutor</button>
+              <button className={"sidebar-navbtn" + (screen === "materiList" || screen === "materi" ? " active" : "")} onClick={() => setScreen("materiList")}><BookOpen size={17} />Materi</button>
+              <button className={"sidebar-navbtn" + (screen === "latihan" || screen === "diagnosis" || screen === "hint" ? " active" : "")} onClick={goStudy}><PenLine size={17} />Latihan</button>
+              <button className={"sidebar-navbtn" + (screen === "progress" ? " active" : "")} onClick={() => setScreen("progress")}><TrendingUp size={17} />Progress</button>
+              <button className={"sidebar-navbtn" + (screen === "leaderboard" ? " active" : "")} onClick={() => setScreen("leaderboard")}><Trophy size={17} />Rank</button>
+              <button className={"sidebar-navbtn" + (screen === "badges" ? " active" : "")} onClick={() => setScreen("badges")}><Award size={17} />Badge</button>
+              <button className={"sidebar-navbtn" + (screen === "profil" ? " active" : "")} onClick={() => setScreen("profil")}><User size={17} />Profil</button>
+            </nav>
+          )}
+          {profile.role === "guru" && (
+            <nav className="floating-nav">
+              <button className={"sidebar-navbtn" + (guruTab === "beranda" ? " active" : "")} onClick={() => setGuruTab("beranda")}><LayoutDashboard size={17} />Beranda</button>
+              <button className={"sidebar-navbtn" + (guruTab === "analitik" ? " active" : "")} onClick={() => setGuruTab("analitik")}><TrendingUp size={17} />Analitik</button>
+              <button className={"sidebar-navbtn" + (guruTab === "materi" ? " active" : "")} onClick={() => setGuruTab("materi")}><Database size={17} />KB</button>
+              <button className="sidebar-navbtn" onClick={logout}><LogOut size={17} />Keluar</button>
+            </nav>
+          )}
 
           <div className="app-main-scroll" style={{ display: "flex", flexDirection: "column" }}>
             {profile.role === "siswa" && (
@@ -760,8 +816,9 @@ export default function App() {
                       <div className="bar-track"><div className="bar-fill" style={{ width: overallPct + "%" }} /></div>
                       <div style={{ fontSize: 12, opacity: 0.9, marginTop: 6, marginBottom: 18, fontWeight: 700 }}>{overallPct}% selesai</div>
                       <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-                        <button className="btn-primary" style={{ background: "white", color: "var(--brand-dark)", boxShadow: "none" }} onClick={() => setScreen("tutorAI")}><MessageCircle size={15} /> Tanya Tutor AI</button>
+                        <button className="btn-primary" style={{ background: "white", color: "var(--brand-dark)", boxShadow: "none" }} onClick={() => setScreen("materiList")}><BookOpen size={15} /> Baca Materi</button>
                         <button className="btn-ghost" style={{ background: "rgba(255,255,255,0.15)", color: "white", borderColor: "rgba(255,255,255,0.4)" }} onClick={goStudy}>Latihan Konsep <ArrowRight size={15} /></button>
+                        <button className="btn-ghost" style={{ background: "rgba(255,255,255,0.15)", color: "white", borderColor: "rgba(255,255,255,0.4)" }} onClick={() => setScreen("tutorAI")}><MessageCircle size={15} /> Tanya Tutor</button>
                       </div>
                     </div>
                     <div className="card">
@@ -794,6 +851,27 @@ export default function App() {
                   </div>
                 )}
 
+                {progressLoaded && screen === "materiList" && (
+                  <div className="card">
+                    <div className="tag-eyebrow">Materi Ajar</div>
+                    <h2 className="disp" style={{ fontSize: 19, marginBottom: 14 }}>Eksponensial · {CONCEPT_ORDER.length} sub-materi</h2>
+                    {CONCEPT_ORDER.map((c, i) => {
+                      const st = statuses[c];
+                      return (
+                        <button key={c} onClick={() => { setActiveConcept(c); setSelected(null); setDiag(null); setConsecWrong(0); setHintTier(0); setScreen("materi"); }}
+                          style={{ display: "flex", alignItems: "center", gap: 14, width: "100%", textAlign: "left", padding: 14, borderRadius: 14, border: "1.5px solid var(--line)", marginBottom: 10, background: "white" }}>
+                          <div style={{ width: 34, height: 34, borderRadius: 10, background: "var(--brand-light)", color: "var(--brand-dark)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, fontWeight: 700, fontSize: 12.5 }}>{i + 1}</div>
+                          <div style={{ flex: 1 }}>
+                            <div style={{ fontWeight: 700, fontSize: 13.5 }}>{CONCEPTS[c].name}</div>
+                            <div style={{ fontSize: 11.5, color: "var(--muted)" }} className="mono">{CONCEPTS[c].short}</div>
+                          </div>
+                          <span className="pill" style={{ background: toneColor[st.tone] + "22", color: toneColor[st.tone] }}>{st.label}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+
                 {progressLoaded && screen === "materi" && (
                   <div className="card">
                     {redirectNote && <div className="misc-item" style={{ marginBottom: 12 }}>↳ {redirectNote}</div>}
@@ -802,9 +880,15 @@ export default function App() {
                     <p style={{ fontSize: 14, lineHeight: 1.6 }}>{MATERI[activeConcept].penjelasan}</p>
                     <div style={{ background: "var(--paper-2)", borderRadius: 10, padding: 14, marginTop: 10, fontFamily: "'IBM Plex Mono'", fontSize: 13.5, whiteSpace: "pre-line", lineHeight: 1.8 }}>Contoh:
 {MATERI[activeConcept].contoh}</div>
-                    <div style={{ marginTop: 18, display: "flex", gap: 10 }}>
-                      <button className="btn-ghost" onClick={() => setScreen("dashboard")}><ArrowLeft size={14} /> Kembali</button>
-                      <button className="btn-primary" onClick={() => setScreen("latihan")}>Latihan <ArrowRight size={15} /></button>
+                    <div style={{ marginTop: 18 }}>
+                      <div style={{ fontSize: 12.5, color: "var(--muted)", marginBottom: 10, fontWeight: 600 }}>Sudah paham? Lanjutkan ke:</div>
+                      <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+                        <button className="btn-ghost" onClick={() => setScreen("materiList")}><ArrowLeft size={14} /> Daftar Materi</button>
+                        <button className="btn-primary" onClick={() => { setSelected(null); setDiag(null); setConsecWrong(0); setHintTier(0); setScreen("latihan"); }}><PenLine size={15} /> Latihan Materi Ini</button>
+                        {CONCEPT_ORDER.indexOf(activeConcept) < CONCEPT_ORDER.length - 1 && (
+                          <button className="btn-ghost" onClick={() => setActiveConcept(CONCEPT_ORDER[CONCEPT_ORDER.indexOf(activeConcept) + 1])}>Materi Berikutnya <ArrowRight size={15} /></button>
+                        )}
+                      </div>
                     </div>
                   </div>
                 )}
@@ -916,9 +1000,9 @@ export default function App() {
                   </div>
                 )}
 
-                {progressLoaded && screen === "profil" && (
+                {progressLoaded && screen === "profil" && !editingProfil && (
                   <div className="card" style={{ textAlign: "center" }}>
-                    <div className="avatar avatar-lg" style={{ margin: "0 auto 14px" }}>{(profile.name || "?").trim().charAt(0).toUpperCase()}</div>
+                    <div className="avatar avatar-lg" style={{ margin: "0 auto 14px", background: AVATAR_GRADIENTS[profile.avatarColor || 0] }}>{(profile.name || "?").trim().charAt(0).toUpperCase()}</div>
                     <h2 className="disp" style={{ fontSize: 19 }}>{profile.name || "Siswa"}</h2>
                     <div style={{ display: "flex", gap: 8, justifyContent: "center", margin: "8px 0 14px", flexWrap: "wrap" }}>
                       {profile.kelas && <span className="pill" style={{ background: "var(--brand-light)", color: "var(--brand-dark)" }}>Kelas {profile.kelas}</span>}
@@ -932,7 +1016,47 @@ export default function App() {
                     <div className="stat-chip" style={{ justifyContent: "center", margin: "0 auto 16px", maxWidth: 220 }}>
                       <TrendingUp size={15} style={{ color: "var(--brand)" }} /> Progress: {overallPct}%
                     </div>
-                    <button className="btn-ghost" onClick={logout}><LogOut size={14} /> Keluar</button>
+                    <div style={{ display: "flex", gap: 10, justifyContent: "center" }}>
+                      <button className="btn-primary" onClick={startEditProfil}>Edit Profil</button>
+                      <button className="btn-ghost" onClick={logout}><LogOut size={14} /> Keluar</button>
+                    </div>
+                  </div>
+                )}
+
+                {progressLoaded && screen === "profil" && editingProfil && (
+                  <div className="card" style={{ maxWidth: 380, margin: "0 auto" }}>
+                    <div className="tag-eyebrow">Edit Profil</div>
+                    <h2 className="disp" style={{ fontSize: 18, marginBottom: 14 }}>Ubah data kamu</h2>
+
+                    <div style={{ marginBottom: 14, textAlign: "center" }}>
+                      <div className="avatar avatar-lg" style={{ margin: "0 auto 10px", background: AVATAR_GRADIENTS[editAvatarColor] }}>{(editName || "?").trim().charAt(0).toUpperCase()}</div>
+                      <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 8, fontWeight: 600 }}>Pilih warna avatar</div>
+                      <div style={{ display: "flex", gap: 8, justifyContent: "center" }}>
+                        {AVATAR_GRADIENTS.map((g, i) => (
+                          <button key={i} className={"avatar-btn" + (editAvatarColor === i ? " picked" : "")} onClick={() => setEditAvatarColor(i)}
+                            style={{ width: 30, height: 30, borderRadius: "50%", background: g, padding: 0 }} />
+                        ))}
+                      </div>
+                    </div>
+
+                    <div style={{ marginBottom: 10 }}>
+                      <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 5, fontWeight: 600 }}>Nama Lengkap</div>
+                      <input type="text" value={editName} onChange={(e) => setEditName(e.target.value)} />
+                    </div>
+
+                    {profile.role === "siswa" && (
+                      <div style={{ marginBottom: 16 }}>
+                        <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 5, fontWeight: 600 }}>Kelas</div>
+                        <input type="text" value={editKelas} onChange={(e) => setEditKelas(e.target.value)} placeholder="contoh: X-A" />
+                      </div>
+                    )}
+
+                    <div style={{ display: "flex", gap: 10 }}>
+                      <button className="btn-ghost" onClick={() => setEditingProfil(false)}>Batal</button>
+                      <button className="btn-primary" disabled={!editName.trim() || savingProfil} onClick={saveProfil}>
+                        {savingProfil ? <Loader2 size={15} className="spin" /> : "Simpan Perubahan"}
+                      </button>
+                    </div>
                   </div>
                 )}
               </div>
@@ -1023,7 +1147,7 @@ function GlobalStyle() {
           --plum:#8B5CF6; --plum-light:#EDE6FE; --rose:#F0466E; --rose-light:#FDE3EA;
           --line:#E6E3F5; --brand:#7C5CFC; --brand-light:#EEE9FF; --brand-dark:#6238E0;
         }
-        .wrap { font-family:'Inter',sans-serif; background:var(--paper); color:var(--ink); border-radius:20px; padding:0; min-height:100%; overflow:hidden; }
+        .wrap { font-family:'Inter',sans-serif; background:var(--paper); color:var(--ink); border-radius:20px; padding:0; min-height:100%; overflow:visible; }
         .disp { font-family:'Baloo 2',sans-serif; font-weight:700; }
         .mono { font-family:'IBM Plex Mono',monospace; }
         button { font-family:'Inter'; cursor:pointer; }
@@ -1067,9 +1191,9 @@ function GlobalStyle() {
         .inputwrap { position:relative; }
         .inputwrap svg { position:absolute; left:12px; top:50%; transform:translateY(-50%); color:var(--muted); }
         .inputwrap input { padding-left:36px; }
-        .app-shell { display:flex; height:640px; max-height:80vh; }
-        .sidebar { width:216px; flex-shrink:0; background:white; border-right:1px solid var(--line); padding:18px 14px; display:flex; flex-direction:column; position:sticky; top:0; align-self:flex-start; height:100%; overflow-y:auto; }
-        .app-main-scroll { flex:1; min-width:0; overflow-y:auto; height:100%; }
+        .app-shell { display:flex; align-items:flex-start; min-height:100vh; }
+        .sidebar { width:216px; flex-shrink:0; background:white; border-right:1px solid var(--line); padding:18px 14px; display:flex; flex-direction:column; position:sticky; top:0; align-self:flex-start; height:100vh; overflow-y:auto; }
+        .app-main-scroll { flex:1; min-width:0; }
         .sidebar-nav { display:flex; flex-direction:column; gap:3px; margin-top:18px; flex:1; }
         .sidebar-navbtn { display:flex; align-items:center; gap:10px; padding:10px 12px; border-radius:12px; border:none; background:none; color:var(--muted); font-size:13.5px; font-weight:600; text-align:left; width:100%; }
         .sidebar-navbtn.active { background:var(--brand-light); color:var(--brand-dark); }
@@ -1079,13 +1203,19 @@ function GlobalStyle() {
         .badge-card.locked { opacity:0.45; }
         .streak-chip { display:inline-flex; align-items:center; gap:5px; background:var(--amber-light); color:#9A6414; padding:5px 12px; border-radius:999px; font-size:12.5px; font-weight:700; }
         .xp-chip { display:inline-flex; align-items:center; gap:5px; background:var(--plum-light); color:var(--plum); padding:5px 12px; border-radius:999px; font-size:12.5px; font-weight:700; }
+        .floating-nav { display:none; }
+        .avatar-btn { cursor:pointer; border:2px solid transparent; }
+        .avatar-btn.picked { border-color:var(--brand); }
         @media (max-width:680px) {
-          .app-shell { flex-direction:column; height:auto; max-height:none; }
-          .sidebar { width:100%; height:auto; position:sticky; top:0; z-index:5; flex-direction:row; align-items:center; overflow-x:auto; overflow-y:visible; padding:10px 12px; border-right:none; border-bottom:1px solid var(--line); }
-          .app-main-scroll { overflow-y:visible; height:auto; }
-          .sidebar-brand, .sidebar-profile-card { display:none; }
-          .sidebar-nav { flex-direction:row; margin-top:0; gap:4px; }
-          .sidebar-navbtn { flex-direction:column; gap:2px; font-size:10px; padding:8px 10px; white-space:nowrap; }
+          .app-shell { flex-direction:column; align-items:stretch; min-height:auto; }
+          .sidebar { display:none; }
+          .app-main-scroll { padding-bottom:86px; }
+          .floating-nav {
+            display:flex; position:fixed; left:50%; bottom:16px; transform:translateX(-50%);
+            background:white; border-radius:999px; box-shadow:0 8px 28px rgba(90,70,190,0.25);
+            padding:8px 10px; gap:2px; z-index:50; max-width:94vw; overflow-x:auto;
+          }
+          .floating-nav .sidebar-navbtn { flex-direction:column; gap:2px; font-size:9.5px; padding:8px 9px; white-space:nowrap; border-radius:14px; }
         }
         .spin { animation: spin 0.8s linear infinite; }
         @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
