@@ -275,8 +275,7 @@ function computeBadgeStats(attempts, statuses, streak) {
 }
 
 // ---------------- Komponen: AI Tutor (chat) ----------------
-function AiTutor({ context, getPageImage }) {
-  const [messages, setMessages] = useState([]);
+function AiTutor({ context, getPageImage, messages, setMessages, onClearHistory }) {
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const boxRef = useRef(null);
@@ -285,8 +284,8 @@ function AiTutor({ context, getPageImage }) {
     if (boxRef.current) boxRef.current.scrollTop = boxRef.current.scrollHeight;
   }, [messages, loading]);
 
-  async function send() {
-    const text = input.trim();
+  async function send(overrideText) {
+    const text = (overrideText ?? input).trim();
     if (!text || loading) return;
     const nextHistory = [...messages, { role: "user", text }];
     setMessages(nextHistory);
@@ -313,11 +312,16 @@ function AiTutor({ context, getPageImage }) {
 
   return (
     <div style={{ display: "flex", flexDirection: "column", height: 480 }}>
+      <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 4 }}>
+        {messages.length > 0 && (
+          <button className="btn-ghost" style={{ padding: "5px 10px", fontSize: 11.5 }} onClick={onClearHistory}>Hapus Riwayat</button>
+        )}
+      </div>
       <div ref={boxRef} style={{ flex: 1, overflowY: "auto", padding: 6 }}>
         {messages.length === 0 && (
           <div style={{ textAlign: "center", color: "var(--muted)", fontSize: 13, marginTop: 40 }}>
             <MessageCircle size={26} style={{ marginBottom: 8 }} /><br />
-            Tanyakan apa saja tentang materi komik ini!
+            Tanyakan apa saja tentang materi Eksponen!
           </div>
         )}
         {messages.map((m, i) => (
@@ -329,7 +333,7 @@ function AiTutor({ context, getPageImage }) {
       </div>
       <div style={{ display: "flex", gap: 8, paddingTop: 10, borderTop: "1px solid var(--line)" }}>
         <input type="text" placeholder="Tanya tutor AI..." value={input} onChange={(e) => setInput(e.target.value)} onKeyDown={(e) => e.key === "Enter" && send()} />
-        <button className="btn-primary" onClick={send} disabled={loading}><Send size={15} /></button>
+        <button className="btn-primary" onClick={() => send()} disabled={loading}><Send size={15} /></button>
       </div>
     </div>
   );
@@ -339,6 +343,7 @@ export default function App() {
   // ---------- Auth & profil ----------
   const [authUser, setAuthUser] = useState(null);
   const [authLoading, setAuthLoading] = useState(true);
+  const [authTimedOut, setAuthTimedOut] = useState(false);
   const [profile, setProfile] = useState(null); // { name, role, kelas, sekolah }
   const [mode, setMode] = useState("landing"); // landing | auth | app
   const [authTab, setAuthTab] = useState("login"); // login | daftar
@@ -364,6 +369,9 @@ export default function App() {
   const [leaderboardLoading, setLeaderboardLoading] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [editingProfil, setEditingProfil] = useState(false);
+  const [tutorMessages, setTutorMessages] = useState([]);
+  const [tutorFocusConcept, setTutorFocusConcept] = useState(null);
+  const tutorGreetedRef = useRef(false);
   const [editName, setEditName] = useState("");
   const [editKelas, setEditKelas] = useState("");
   const [editAvatarColor, setEditAvatarColor] = useState(0);
@@ -384,68 +392,83 @@ export default function App() {
   const [guruLoading, setGuruLoading] = useState(false);
 
   useEffect(() => {
+    const t = setTimeout(() => setAuthTimedOut(true), 12000);
     const unsub = onAuthStateChanged(auth, async (u) => {
       setAuthUser(u);
-      if (u) {
-        const snap = await getDoc(doc(db, "users", u.uid));
-        if (snap.exists()) {
-          setProfile(snap.data());
-          setMode("app");
-          setScreen("dashboard");
+      try {
+        if (u) {
+          const snap = await getDoc(doc(db, "users", u.uid));
+          if (snap.exists()) {
+            setProfile(snap.data());
+            setMode("app");
+            setScreen("dashboard");
+          } else {
+            await signOut(auth);
+          }
         } else {
-          await signOut(auth);
+          setProfile(null);
+          setAttempts(EMPTY_ATTEMPTS);
+          setMisconceptions([]);
+          setPoolIndex(EMPTY_POOLIDX);
+          setTutorMessages([]);
+          setProgressLoaded(false);
+          setMode("landing");
         }
-      } else {
-        setProfile(null);
-        setAttempts(EMPTY_ATTEMPTS);
-        setMisconceptions([]);
-        setPoolIndex(EMPTY_POOLIDX);
-        setComicProgress({});
-        setProgressLoaded(false);
-        setMode("landing");
+      } catch (e) {
+        // Gagal mengambil data profil (jaringan lambat/bermasalah) -> tetap lanjutkan,
+        // supaya tidak macet selamanya di layar "Memuat...".
+      } finally {
+        clearTimeout(t);
+        setAuthLoading(false);
       }
-      setAuthLoading(false);
     });
-    return () => unsub();
+    return () => { unsub(); clearTimeout(t); };
   }, []);
 
   useEffect(() => {
     async function loadProgress() {
       if (!authUser || !profile || profile.role !== "siswa") return;
-      const snap = await getDoc(doc(db, "progress", authUser.uid));
-      let loadedStreak = 0;
-      let loadedLastActive = null;
-      if (snap.exists()) {
-        const d = snap.data();
-        setAttempts(d.attempts || EMPTY_ATTEMPTS);
-        setMisconceptions(d.misconceptions || []);
-        setPoolIndex(d.poolIndex || EMPTY_POOLIDX);
-        loadedStreak = d.streak || 0;
-        loadedLastActive = d.lastActiveDate || null;
-      }
-      // Hitung streak harian: lanjut kalau aktif kemarin, reset kalau lewat 1 hari, tetap kalau sudah aktif hari ini
-      if (!streakCheckedRef.current) {
-        streakCheckedRef.current = true;
-        const today = new Date().toISOString().slice(0, 10);
-        if (loadedLastActive === today) {
-          loadedStreak = loadedStreak || 1;
-        } else {
-          const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
-          loadedStreak = loadedLastActive === yesterday ? (loadedStreak || 0) + 1 : 1;
-          loadedLastActive = today;
+      try {
+        const snap = await getDoc(doc(db, "progress", authUser.uid));
+        let loadedStreak = 0;
+        let loadedLastActive = null;
+        if (snap.exists()) {
+          const d = snap.data();
+          setAttempts(d.attempts || EMPTY_ATTEMPTS);
+          setMisconceptions(d.misconceptions || []);
+          setPoolIndex(d.poolIndex || EMPTY_POOLIDX);
+          setTutorMessages(d.tutorMessages || []);
+          loadedStreak = d.streak || 0;
+          loadedLastActive = d.lastActiveDate || null;
         }
-        setStreak(loadedStreak);
-        setLastActiveDate(loadedLastActive);
+        // Hitung streak harian: lanjut kalau aktif kemarin, reset kalau lewat 1 hari, tetap kalau sudah aktif hari ini
+        if (!streakCheckedRef.current) {
+          streakCheckedRef.current = true;
+          const today = new Date().toISOString().slice(0, 10);
+          if (loadedLastActive === today) {
+            loadedStreak = loadedStreak || 1;
+          } else {
+            const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
+            loadedStreak = loadedLastActive === yesterday ? (loadedStreak || 0) + 1 : 1;
+            loadedLastActive = today;
+          }
+          setStreak(loadedStreak);
+          setLastActiveDate(loadedLastActive);
+        }
+      } catch (e) {
+        // Gagal memuat progress (jaringan bermasalah) -> tetap lanjutkan dengan data kosong
+        // supaya tidak macet selamanya.
+      } finally {
+        setProgressLoaded(true);
       }
-      setProgressLoaded(true);
     }
     loadProgress();
   }, [authUser, profile]);
 
   useEffect(() => {
     if (!authUser || !profile || profile.role !== "siswa" || !progressLoaded) return;
-    setDoc(doc(db, "progress", authUser.uid), { attempts, misconceptions, poolIndex, streak, lastActiveDate }, { merge: true }).catch(() => {});
-  }, [attempts, misconceptions, poolIndex, streak, lastActiveDate, authUser, profile, progressLoaded]);
+    setDoc(doc(db, "progress", authUser.uid), { attempts, misconceptions, poolIndex, streak, lastActiveDate, tutorMessages: tutorMessages.slice(-30) }, { merge: true }).catch(() => {});
+  }, [attempts, misconceptions, poolIndex, streak, lastActiveDate, tutorMessages, authUser, profile, progressLoaded]);
 
   const statuses = useMemo(() => {
     const s = {};
@@ -470,7 +493,16 @@ export default function App() {
     setDiag(null);
     setConsecWrong(0);
     setHintTier(0);
-    setScreen("materi");
+    setScreen("latihan");
+  }
+
+  function openLatihanFor(concept) {
+    setActiveConcept(concept);
+    setSelected(null);
+    setDiag(null);
+    setConsecWrong(0);
+    setHintTier(0);
+    setScreen("latihan");
   }
 
   function currentQ() {
@@ -548,6 +580,39 @@ export default function App() {
   }
 
   const overallPct = useMemo(() => overallPctOf(attempts), [attempts]);
+
+  // Evaluasi progres: cari konsep dengan status "Butuh remedial" (prioritas utama),
+  // kalau tidak ada, cari konsep dengan penguasaan terendah yang sudah pernah dicoba.
+  const weakestConcept = useMemo(() => {
+    const remedial = CONCEPT_ORDER.find((c) => statuses[c]?.label === "Butuh remedial");
+    if (remedial) return remedial;
+    const tried = CONCEPT_ORDER.filter((c) => (attempts[c] || []).length > 0 && statuses[c]?.label !== "Dikuasai");
+    if (tried.length === 0) return null;
+    tried.sort((a, b) => (computeMastery(attempts[a]) ?? 0) - (computeMastery(attempts[b]) ?? 0));
+    return tried[0];
+  }, [attempts, statuses]);
+
+  function openTutorForConcept(conceptId) {
+    setTutorFocusConcept(conceptId);
+    setScreen("tutorAI");
+  }
+
+  async function clearTutorHistory() {
+    setTutorMessages([]);
+    setTutorFocusConcept(null);
+    tutorGreetedRef.current = false;
+  }
+
+  useEffect(() => {
+    if (screen !== "tutorAI" || !tutorFocusConcept || tutorGreetedRef.current) return;
+    tutorGreetedRef.current = true;
+    const c = tutorFocusConcept;
+    const greet = {
+      role: "ai",
+      text: `Halo! Berdasarkan progres belajarmu, kamu masih perlu penguatan di konsep "${CONCEPTS[c].name}". ${MATERI[c].penjelasan} Ada bagian yang membingungkan atau mau coba contoh soal bareng?`,
+    };
+    setTutorMessages((m) => [...m, greet]);
+  }, [screen, tutorFocusConcept]);
   useEffect(() => { if (screen !== "profil") setEditingProfil(false); }, [screen]);
   const xp = useMemo(() => computeXp(attempts), [attempts]);
   const { level, xpInLevel, xpTarget } = useMemo(() => computeLevel(xp), [xp]);
@@ -664,7 +729,14 @@ export default function App() {
     return (
       <div className="wrap" style={{ display: "flex", alignItems: "center", justifyContent: "center", minHeight: 300 }}>
         <GlobalStyle />
-        <div style={{ display: "flex", alignItems: "center", gap: 8, color: "var(--muted)" }}><Loader2 size={18} className="spin" /> Memuat...</div>
+        {!authTimedOut ? (
+          <div style={{ display: "flex", alignItems: "center", gap: 8, color: "var(--muted)" }}><Loader2 size={18} className="spin" /> Memuat...</div>
+        ) : (
+          <div style={{ textAlign: "center", padding: 20 }}>
+            <p style={{ color: "var(--muted)", fontSize: 13.5, marginBottom: 12 }}>Koneksi lambat atau bermasalah. Coba muat ulang halaman.</p>
+            <button className="btn-primary" onClick={() => window.location.reload()}><RefreshCw size={15} /> Muat Ulang</button>
+          </div>
+        )}
       </div>
     );
   }
@@ -743,9 +815,9 @@ export default function App() {
             {profile.role === "siswa" && (
               <nav className="sidebar-nav">
                 <button className={"sidebar-navbtn" + (screen === "dashboard" ? " active" : "")} onClick={() => setScreen("dashboard")}><LayoutDashboard size={17} />Dashboard</button>
-                <button className={"sidebar-navbtn" + (screen === "tutorAI" ? " active" : "")} onClick={() => setScreen("tutorAI")}><MessageCircle size={17} />Tutor AI</button>
+                <button className={"sidebar-navbtn" + (screen === "tutorAI" ? " active" : "")} onClick={() => { setTutorFocusConcept(null); setScreen("tutorAI"); }}><MessageCircle size={17} />Tutor AI</button>
                 <button className={"sidebar-navbtn" + (screen === "materiList" || screen === "materi" ? " active" : "")} onClick={() => setScreen("materiList")}><BookOpen size={17} />Materi</button>
-                <button className={"sidebar-navbtn" + (screen === "latihan" || screen === "diagnosis" || screen === "hint" ? " active" : "")} onClick={goStudy}><PenLine size={17} />Latihan</button>
+                <button className={"sidebar-navbtn" + (screen === "latihanList" || screen === "latihan" || screen === "diagnosis" || screen === "hint" ? " active" : "")} onClick={() => setScreen("latihanList")}><PenLine size={17} />Latihan</button>
                 <button className={"sidebar-navbtn" + (screen === "progress" ? " active" : "")} onClick={() => setScreen("progress")}><TrendingUp size={17} />Progress</button>
                 <button className={"sidebar-navbtn" + (screen === "leaderboard" ? " active" : "")} onClick={() => setScreen("leaderboard")}><Trophy size={17} />Peringkat</button>
                 <button className={"sidebar-navbtn" + (screen === "badges" ? " active" : "")} onClick={() => setScreen("badges")}><Award size={17} />Koleksi Badge</button>
@@ -774,9 +846,9 @@ export default function App() {
           {profile.role === "siswa" && (
             <nav className="floating-nav">
               <button className={"sidebar-navbtn" + (screen === "dashboard" ? " active" : "")} onClick={() => setScreen("dashboard")}><LayoutDashboard size={17} />Home</button>
-              <button className={"sidebar-navbtn" + (screen === "tutorAI" ? " active" : "")} onClick={() => setScreen("tutorAI")}><MessageCircle size={17} />Tutor</button>
+              <button className={"sidebar-navbtn" + (screen === "tutorAI" ? " active" : "")} onClick={() => { setTutorFocusConcept(null); setScreen("tutorAI"); }}><MessageCircle size={17} />Tutor</button>
               <button className={"sidebar-navbtn" + (screen === "materiList" || screen === "materi" ? " active" : "")} onClick={() => setScreen("materiList")}><BookOpen size={17} />Materi</button>
-              <button className={"sidebar-navbtn" + (screen === "latihan" || screen === "diagnosis" || screen === "hint" ? " active" : "")} onClick={goStudy}><PenLine size={17} />Latihan</button>
+              <button className={"sidebar-navbtn" + (screen === "latihanList" || screen === "latihan" || screen === "diagnosis" || screen === "hint" ? " active" : "")} onClick={() => setScreen("latihanList")}><PenLine size={17} />Latihan</button>
               <button className={"sidebar-navbtn" + (screen === "progress" ? " active" : "")} onClick={() => setScreen("progress")}><TrendingUp size={17} />Progress</button>
               <button className={"sidebar-navbtn" + (screen === "leaderboard" ? " active" : "")} onClick={() => setScreen("leaderboard")}><Trophy size={17} />Rank</button>
               <button className={"sidebar-navbtn" + (screen === "badges" ? " active" : "")} onClick={() => setScreen("badges")}><Award size={17} />Badge</button>
@@ -809,6 +881,18 @@ export default function App() {
 
                 {progressLoaded && screen === "dashboard" && (
                   <>
+                    {weakestConcept && (
+                      <div className="card" style={{ marginBottom: 16, borderColor: "var(--amber)", background: "var(--amber-light)" }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 6 }}>
+                          <Sparkles size={18} style={{ color: "#9A6414" }} />
+                          <div style={{ fontWeight: 700, fontSize: 13.5, color: "#9A6414" }}>Rekomendasi AI</div>
+                        </div>
+                        <p style={{ fontSize: 13, color: "#6b4d10", marginBottom: 10 }}>
+                          Berdasarkan progresmu, kamu masih perlu penguatan di konsep <b>{CONCEPTS[weakestConcept].name}</b>. Mau dibantu Tutor AI mendalami bagian ini?
+                        </p>
+                        <button className="btn-primary" style={{ background: "#9A6414", boxShadow: "none" }} onClick={() => openTutorForConcept(weakestConcept)}><MessageCircle size={14} /> Tanya Tutor soal ini</button>
+                      </div>
+                    )}
                     <div className="hero-card" style={{ marginBottom: 16 }}>
                       <div style={{ fontSize: 12, opacity: 0.85, fontWeight: 700, letterSpacing: ".04em", textTransform: "uppercase" }}>Halo, {profile.name || "Siswa"} 👋</div>
                       <h2 className="disp" style={{ fontSize: 22, margin: "6px 0 4px" }}>Semangat belajar hari ini!</h2>
@@ -818,7 +902,7 @@ export default function App() {
                       <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
                         <button className="btn-primary" style={{ background: "white", color: "var(--brand-dark)", boxShadow: "none" }} onClick={() => setScreen("materiList")}><BookOpen size={15} /> Baca Materi</button>
                         <button className="btn-ghost" style={{ background: "rgba(255,255,255,0.15)", color: "white", borderColor: "rgba(255,255,255,0.4)" }} onClick={goStudy}>Latihan Konsep <ArrowRight size={15} /></button>
-                        <button className="btn-ghost" style={{ background: "rgba(255,255,255,0.15)", color: "white", borderColor: "rgba(255,255,255,0.4)" }} onClick={() => setScreen("tutorAI")}><MessageCircle size={15} /> Tanya Tutor</button>
+                        <button className="btn-ghost" style={{ background: "rgba(255,255,255,0.15)", color: "white", borderColor: "rgba(255,255,255,0.4)" }} onClick={() => { setTutorFocusConcept(null); setScreen("tutorAI"); }}><MessageCircle size={15} /> Tanya Tutor</button>
                       </div>
                     </div>
                     <div className="card">
@@ -839,13 +923,20 @@ export default function App() {
                 {progressLoaded && screen === "tutorAI" && (
                   <div className="card" style={{ padding: 16 }}>
                     <div className="tag-eyebrow">Tutor AI</div>
-                    <h2 className="disp" style={{ fontSize: 18, marginBottom: 12 }}>Tanya apa saja soal materi Eksponen</h2>
+                    <h2 className="disp" style={{ fontSize: 18, marginBottom: 4 }}>
+                      {tutorFocusConcept ? `Pendalaman: ${CONCEPTS[tutorFocusConcept].name}` : "Tanya apa saja soal materi Eksponen"}
+                    </h2>
+                    <p style={{ fontSize: 12, color: "var(--muted)", marginBottom: 12 }}>Riwayat percakapanmu tersimpan otomatis, tidak akan hilang saat pindah halaman.</p>
                     <AiTutor
+                      messages={tutorMessages}
+                      setMessages={setTutorMessages}
+                      onClearHistory={clearTutorHistory}
                       context={
                         "Materi yang dipelajari siswa: Eksponensial, mencakup konsep " +
                         CONCEPT_ORDER.map((c) => CONCEPTS[c].name).join(", ") + ". " +
-                        "Saat ini siswa sedang fokus pada konsep: " + CONCEPTS[activeConcept].name +
-                        " (" + MATERI[activeConcept].penjelasan + ")."
+                        (tutorFocusConcept
+                          ? "Siswa sedang butuh pendalaman khusus pada konsep: " + CONCEPTS[tutorFocusConcept].name + " (" + MATERI[tutorFocusConcept].penjelasan + "). Fokuskan bantuanmu ke konsep ini."
+                          : "Saat ini siswa sedang fokus pada konsep: " + CONCEPTS[activeConcept].name + " (" + MATERI[activeConcept].penjelasan + ").")
                       }
                     />
                   </div>
@@ -890,6 +981,28 @@ export default function App() {
                         )}
                       </div>
                     </div>
+                  </div>
+                )}
+
+                {progressLoaded && screen === "latihanList" && (
+                  <div className="card">
+                    <div className="tag-eyebrow">Latihan Soal</div>
+                    <h2 className="disp" style={{ fontSize: 19, marginBottom: 4 }}>Pilih sub-materi untuk dilatih</h2>
+                    <p style={{ fontSize: 12.5, color: "var(--muted)", marginBottom: 14 }}>Soal latihan akan sesuai dengan sub-materi yang kamu pilih di bawah ini.</p>
+                    {CONCEPT_ORDER.map((c, i) => {
+                      const st = statuses[c];
+                      return (
+                        <button key={c} onClick={() => { setActiveConcept(c); setSelected(null); setDiag(null); setConsecWrong(0); setHintTier(0); setRedirectNote(null); setScreen("latihan"); }}
+                          style={{ display: "flex", alignItems: "center", gap: 14, width: "100%", textAlign: "left", padding: 14, borderRadius: 14, border: "1.5px solid var(--line)", marginBottom: 10, background: "white" }}>
+                          <div style={{ width: 34, height: 34, borderRadius: 10, background: "var(--brand-light)", color: "var(--brand-dark)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, fontWeight: 700, fontSize: 12.5 }}>{i + 1}</div>
+                          <div style={{ flex: 1 }}>
+                            <div style={{ fontWeight: 700, fontSize: 13.5 }}>{CONCEPTS[c].name}</div>
+                            <div style={{ fontSize: 11.5, color: "var(--muted)" }} className="mono">{CONCEPTS[c].short} · {PRACTICE_POOL[c].length} soal tersedia</div>
+                          </div>
+                          <span className="pill" style={{ background: toneColor[st.tone] + "22", color: toneColor[st.tone] }}>{st.label}</span>
+                        </button>
+                      );
+                    })}
                   </div>
                 )}
 
@@ -1020,6 +1133,19 @@ export default function App() {
                       <button className="btn-primary" onClick={startEditProfil}>Edit Profil</button>
                       <button className="btn-ghost" onClick={logout}><LogOut size={14} /> Keluar</button>
                     </div>
+                  </div>
+                )}
+
+                {progressLoaded && screen === "profil" && !editingProfil && weakestConcept && (
+                  <div className="card" style={{ marginTop: 16, borderColor: "var(--amber)", background: "var(--amber-light)" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 6 }}>
+                      <Sparkles size={18} style={{ color: "#9A6414" }} />
+                      <div style={{ fontWeight: 700, fontSize: 13.5, color: "#9A6414" }}>Evaluasi AI</div>
+                    </div>
+                    <p style={{ fontSize: 13, color: "#6b4d10", marginBottom: 10 }}>
+                      Kamu masih perlu penguatan di konsep <b>{CONCEPTS[weakestConcept].name}</b>.
+                    </p>
+                    <button className="btn-primary" style={{ background: "#9A6414", boxShadow: "none" }} onClick={() => openTutorForConcept(weakestConcept)}><MessageCircle size={14} /> Tanya Tutor soal ini</button>
                   </div>
                 )}
 
