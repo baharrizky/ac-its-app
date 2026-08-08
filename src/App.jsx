@@ -389,6 +389,7 @@ export default function App() {
   // ---------- Guru ----------
   const [guruTab, setGuruTab] = useState("beranda");
   const [guruStudents, setGuruStudents] = useState([]);
+  const [guruKelasFilter, setGuruKelasFilter] = useState("semua");
   const [guruLoading, setGuruLoading] = useState(false);
 
   useEffect(() => {
@@ -702,14 +703,23 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mode, profile, screen]);
 
-  const guruAvgPct = useMemo(() => {
-    if (guruStudents.length === 0) return 0;
-    const sum = guruStudents.reduce((a, s) => a + overallPctOf(s.attempts), 0);
-    return Math.round(sum / guruStudents.length);
+  const guruClasses = useMemo(() => {
+    const set = new Set(guruStudents.map((s) => s.kelas).filter(Boolean));
+    return Array.from(set).sort();
   }, [guruStudents]);
+  const guruFilteredStudents = useMemo(() => {
+    if (guruKelasFilter === "semua") return guruStudents;
+    return guruStudents.filter((s) => s.kelas === guruKelasFilter);
+  }, [guruStudents, guruKelasFilter]);
+
+  const guruAvgPct = useMemo(() => {
+    if (guruFilteredStudents.length === 0) return 0;
+    const sum = guruFilteredStudents.reduce((a, s) => a + overallPctOf(s.attempts), 0);
+    return Math.round(sum / guruFilteredStudents.length);
+  }, [guruFilteredStudents]);
 
   function guruConceptMastery(c) {
-    const ms = guruStudents.map((s) => computeMastery(s.attempts[c] || [])).filter((m) => m !== null);
+    const ms = guruFilteredStudents.map((s) => computeMastery(s.attempts[c] || [])).filter((m) => m !== null);
     if (ms.length === 0) return null;
     return ms.reduce((a, b) => a + b, 0) / ms.length;
   }
@@ -719,11 +729,31 @@ export default function App() {
     const worst = withData.sort((a, b) => guruConceptMastery(a) - guruConceptMastery(b))[0];
     return CONCEPTS[worst].name;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [guruStudents]);
+  }, [guruFilteredStudents]);
   const allMisconceptions = useMemo(
-    () => guruStudents.flatMap((s) => (s.misconceptions || []).map((m) => ({ ...m, student: s.name }))),
-    [guruStudents]
+    () => guruFilteredStudents.flatMap((s) => (s.misconceptions || []).map((m) => ({ ...m, student: s.name }))),
+    [guruFilteredStudents]
   );
+
+  async function exportGuruExcel() {
+    const XLSX = await import("xlsx");
+    const rows = guruFilteredStudents.map((s) => {
+      const row = { Nama: s.name, Kelas: s.kelas || "-", "Asal Sekolah": s.sekolah || "-" };
+      CONCEPT_ORDER.forEach((c) => {
+        const m = computeMastery(s.attempts[c] || []);
+        row[CONCEPTS[c].name] = m !== null ? Math.round(m * 100) + "%" : "Belum diuji";
+      });
+      row["Progress Keseluruhan"] = overallPctOf(s.attempts) + "%";
+      row["Jumlah Miskonsepsi Tercatat"] = (s.misconceptions || []).length;
+      return row;
+    });
+    if (rows.length === 0) return;
+    const ws = XLSX.utils.json_to_sheet(rows);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Kemampuan Siswa");
+    const namaFile = guruKelasFilter === "semua" ? "laporan-semua-kelas.xlsx" : `laporan-kelas-${guruKelasFilter}.xlsx`;
+    XLSX.writeFile(wb, namaFile);
+  }
 
   if (authLoading) {
     return (
@@ -1190,19 +1220,32 @@ export default function App() {
 
             {profile.role === "guru" && (
               <div className="body-area">
-                <div style={{ marginBottom: 16, display: "flex", justifyContent: "flex-end" }}>
-                  <button className="btn-ghost" onClick={loadGuruData} disabled={guruLoading}>{guruLoading ? <Loader2 size={14} className="spin" /> : <RefreshCw size={14} />} Muat ulang data</button>
+                <div style={{ marginBottom: 16, display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <span style={{ fontSize: 12.5, color: "var(--muted)", fontWeight: 600 }}>Kelas:</span>
+                    <select value={guruKelasFilter} onChange={(e) => setGuruKelasFilter(e.target.value)}
+                      style={{ padding: "8px 12px", borderRadius: 10, border: "1.5px solid var(--line)", fontSize: 13, background: "white" }}>
+                      <option value="semua">Semua Kelas ({guruStudents.length} siswa)</option>
+                      {guruClasses.map((k) => (
+                        <option key={k} value={k}>{k} ({guruStudents.filter((s) => s.kelas === k).length} siswa)</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div style={{ display: "flex", gap: 8 }}>
+                    <button className="btn-ghost" onClick={exportGuruExcel} disabled={guruFilteredStudents.length === 0}><Database size={14} /> Export Excel</button>
+                    <button className="btn-ghost" onClick={loadGuruData} disabled={guruLoading}>{guruLoading ? <Loader2 size={14} className="spin" /> : <RefreshCw size={14} />} Muat ulang</button>
+                  </div>
                 </div>
 
                 {guruTab === "beranda" && (
                   <div className="card">
-                    <div className="tag-eyebrow">Dashboard Guru — data siswa dari database</div>
+                    <div className="tag-eyebrow">Dashboard Guru — {guruKelasFilter === "semua" ? "Semua Kelas" : `Kelas ${guruKelasFilter}`}</div>
                     <div style={{ display: "flex", gap: 14, flexWrap: "wrap", marginTop: 10, marginBottom: 18 }}>
-                      <div className="card" style={{ flex: 1, minWidth: 140 }}><div style={{ fontSize: 11, color: "var(--muted)" }}>Total siswa</div><div className="disp" style={{ fontSize: 22 }}>{guruStudents.length}</div></div>
+                      <div className="card" style={{ flex: 1, minWidth: 140 }}><div style={{ fontSize: 11, color: "var(--muted)" }}>Total siswa</div><div className="disp" style={{ fontSize: 22 }}>{guruFilteredStudents.length}</div></div>
                       <div className="card" style={{ flex: 1, minWidth: 140 }}><div style={{ fontSize: 11, color: "var(--muted)" }}>Rata-rata penguasaan</div><div className="disp" style={{ fontSize: 22 }}>{guruAvgPct}%</div></div>
                       <div className="card" style={{ flex: 1, minWidth: 140 }}><div style={{ fontSize: 11, color: "var(--muted)" }}>Konsep tersulit</div><div className="disp" style={{ fontSize: 16 }}>{guruHardestConcept}</div></div>
                     </div>
-                    {guruStudents.length === 0 && !guruLoading && <p style={{ fontSize: 13.5, color: "var(--muted)" }}>Belum ada siswa yang terdaftar, atau belum ada aktivitas belajar.</p>}
+                    {guruFilteredStudents.length === 0 && !guruLoading && <p style={{ fontSize: 13.5, color: "var(--muted)" }}>Belum ada siswa pada kelas ini, atau belum ada aktivitas belajar.</p>}
                     {CONCEPT_ORDER.map((c) => {
                       const m = guruConceptMastery(c); const pct = m ? Math.round(m * 100) : 0;
                       const st = m === null ? { tone: "neutral" } : (pct >= 75 ? { tone: "good" } : pct >= 40 ? { tone: "warn" } : { tone: "bad" });
@@ -1213,12 +1256,12 @@ export default function App() {
                         </div>
                       );
                     })}
-                    {guruStudents.length > 0 && (
+                    {guruFilteredStudents.length > 0 && (
                       <div style={{ marginTop: 20 }}>
                         <div className="tag-eyebrow">Daftar siswa</div>
                         <table>
                           <thead><tr><th>Nama</th><th>Kelas</th><th>Sekolah</th><th>Progress</th></tr></thead>
-                          <tbody>{guruStudents.map((s) => (<tr key={s.uid}><td>{s.name}</td><td>{s.kelas || "-"}</td><td>{s.sekolah || "-"}</td><td>{overallPctOf(s.attempts)}%</td></tr>))}</tbody>
+                          <tbody>{guruFilteredStudents.map((s) => (<tr key={s.uid}><td>{s.name}</td><td>{s.kelas || "-"}</td><td>{s.sekolah || "-"}</td><td>{overallPctOf(s.attempts)}%</td></tr>))}</tbody>
                         </table>
                       </div>
                     )}
