@@ -339,7 +339,7 @@ function AiTutor({ context, getPageImage, messages, setMessages, onClearHistory 
   );
 }
 
-export default function App() {
+function AppInner() {
   // ---------- Auth & profil ----------
   const [authUser, setAuthUser] = useState(null);
   const [authLoading, setAuthLoading] = useState(true);
@@ -1390,5 +1390,45 @@ function GlobalStyle() {
         @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
       `}</style>
     </>
+  );
+}
+
+class ErrorBoundary extends React.Component {
+  constructor(props) {
+    super(props);
+    this.state = { hasError: false, message: "" };
+  }
+  static getDerivedStateFromError(error) {
+    return { hasError: true, message: (error && error.message) || "Terjadi kesalahan tak terduga." };
+  }
+  componentDidCatch(error, info) {
+    // eslint-disable-next-line no-console
+    console.error("App crashed:", error, info);
+  }
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div style={{ fontFamily: "sans-serif", padding: 30, textAlign: "center", background: "#F6F5FC", minHeight: "100vh", boxSizing: "border-box" }}>
+          <h2 style={{ color: "#1E1B33" }}>Ups, terjadi kesalahan</h2>
+          <p style={{ color: "#7A768E", fontSize: 13.5, marginBottom: 6 }}>Halaman mengalami error dan tidak bisa lanjut menampilkan konten.</p>
+          <p style={{ color: "#B23", fontSize: 12, marginBottom: 16, fontFamily: "monospace" }}>{this.state.message}</p>
+          <button
+            onClick={() => window.location.reload()}
+            style={{ background: "#7C5CFC", color: "white", border: "none", padding: "10px 20px", borderRadius: 10, fontWeight: 600, cursor: "pointer" }}
+          >
+            Muat Ulang Halaman
+          </button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
+export default function App() {
+  return (
+    <ErrorBoundary>
+      <AppInner />
+    </ErrorBoundary>
   );
 }
