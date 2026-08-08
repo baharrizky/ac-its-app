@@ -435,9 +435,9 @@ function AppInner() {
         let loadedLastActive = null;
         if (snap.exists()) {
           const d = snap.data();
-          setAttempts(d.attempts || EMPTY_ATTEMPTS);
+          setAttempts({ ...EMPTY_ATTEMPTS, ...(d.attempts || {}) });
           setMisconceptions(d.misconceptions || []);
-          setPoolIndex(d.poolIndex || EMPTY_POOLIDX);
+          setPoolIndex({ ...EMPTY_POOLIDX, ...(d.poolIndex || {}) });
           setTutorMessages(d.tutorMessages || []);
           loadedStreak = d.streak || 0;
           loadedLastActive = d.lastActiveDate || null;
@@ -507,8 +507,10 @@ function AppInner() {
   }
 
   function currentQ() {
-    const idx = poolIndex[activeConcept] % PRACTICE_POOL[activeConcept].length;
-    return PRACTICE_POOL[activeConcept][idx];
+    const pool = PRACTICE_POOL[activeConcept] || [];
+    if (pool.length === 0) return { text: "Soal untuk konsep ini belum tersedia.", options: [] };
+    const idx = (poolIndex[activeConcept] || 0) % pool.length;
+    return pool[idx];
   }
 
   function submitAnswer() {
