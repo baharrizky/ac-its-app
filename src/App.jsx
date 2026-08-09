@@ -194,7 +194,7 @@ function overallPctOf(attempts) {
   return Math.round((tested.reduce((a, b) => a + b, 0) / CONCEPT_ORDER.length) * 100);
 }
 const toneColor = { good: "var(--teal)", warn: "var(--amber)", bad: "var(--rose)", neutral: "var(--muted)" };
-const GURU_PALETTE = { strong: "#F472B6", mid: "#C4B5FD", soft: "#A78BFA", pale: "#EEE9FF" };
+const GURU_PALETTE = { strong: "#f472a8", mid: "#f7a6eb", soft: "#c7b5fe", pale: "#EEE9FF" };
 
 // ---------------- Komponen: MathText — merender notasi LaTeX asli pakai KaTeX ----------------
 function KaTeXSpan({ tex, block = false }) {
