@@ -2,6 +2,10 @@ import React, { useState, useMemo, useEffect, useRef } from "react";
 import katex from "katex";
 import "katex/dist/katex.min.css";
 import {
+  PieChart, Pie, Cell, Tooltip, Legend, ResponsiveContainer,
+  BarChart, Bar, XAxis, YAxis, CartesianGrid,
+} from "recharts";
+import {
   GraduationCap, LayoutDashboard, BookOpen, PenLine, TrendingUp, User,
   Lightbulb, CheckCircle2, AlertTriangle, ArrowRight, ArrowLeft, LogOut, Database, Users,
   Mail, Lock, Loader2, RefreshCw, MessageCircle, Sparkles, ClipboardList, Lock as LockIcon,
@@ -722,6 +726,30 @@ function AppInner() {
     return CONCEPTS[worst].name;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [guruFilteredStudents]);
+  const guruChartData = useMemo(() => (
+    CONCEPT_ORDER.map((c) => {
+      const m = guruConceptMastery(c);
+      return { name: CONCEPTS[c].short, fullName: CONCEPTS[c].name, pct: m !== null ? Math.round(m * 100) : 0, hasData: m !== null };
+    })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  ), [guruFilteredStudents]);
+  const guruDistribusi = useMemo(() => {
+    let baik = 0, cukup = 0, kurang = 0, belum = 0;
+    CONCEPT_ORDER.forEach((c) => {
+      const m = guruConceptMastery(c);
+      if (m === null) belum++;
+      else if (m * 100 >= 75) baik++;
+      else if (m * 100 >= 40) cukup++;
+      else kurang++;
+    });
+    return [
+      { name: "Baik (≥75%)", value: baik, color: toneColor.good },
+      { name: "Cukup (40–74%)", value: cukup, color: toneColor.warn },
+      { name: "Kurang (<40%)", value: kurang, color: toneColor.bad },
+      { name: "Belum diuji", value: belum, color: toneColor.neutral },
+    ].filter((d) => d.value > 0);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [guruFilteredStudents]);
   const allMisconceptions = useMemo(
     () => guruFilteredStudents.flatMap((s) => (s.misconceptions || []).map((m) => ({ ...m, student: s.name }))),
     [guruFilteredStudents]
@@ -1244,6 +1272,38 @@ function AppInner() {
                       <div className="card" style={{ flex: 1, minWidth: 140 }}><div style={{ fontSize: 11, color: "var(--muted)" }}>Konsep tersulit</div><div className="disp" style={{ fontSize: 16 }}>{guruHardestConcept}</div></div>
                     </div>
                     {guruFilteredStudents.length === 0 && !guruLoading && <p style={{ fontSize: 13.5, color: "var(--muted)" }}>Belum ada siswa pada kelas ini, atau belum ada aktivitas belajar.</p>}
+                    {guruFilteredStudents.length > 0 && (
+                      <div style={{ display: "flex", gap: 14, flexWrap: "wrap", marginBottom: 22 }}>
+                        <div className="card" style={{ flex: "1 1 260px", minWidth: 260 }}>
+                          <div className="tag-eyebrow" style={{ marginBottom: 10 }}>Sebaran Penguasaan Konsep</div>
+                          <ResponsiveContainer width="100%" height={220}>
+                            <PieChart>
+                              <Pie data={guruDistribusi} dataKey="value" nameKey="name" innerRadius={50} outerRadius={80} paddingAngle={2}>
+                                {guruDistribusi.map((d, i) => <Cell key={i} fill={d.color} />)}
+                              </Pie>
+                              <Tooltip />
+                              <Legend verticalAlign="bottom" height={36} wrapperStyle={{ fontSize: 11.5 }} />
+                            </PieChart>
+                          </ResponsiveContainer>
+                        </div>
+                        <div className="card" style={{ flex: "2 1 380px", minWidth: 300 }}>
+                          <div className="tag-eyebrow" style={{ marginBottom: 10 }}>Penguasaan per Konsep (%)</div>
+                          <ResponsiveContainer width="100%" height={220}>
+                            <BarChart data={guruChartData} margin={{ top: 4, right: 8, left: -20, bottom: 4 }}>
+                              <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                              <XAxis dataKey="name" tick={{ fontSize: 10.5 }} interval={0} angle={-25} textAnchor="end" height={45} />
+                              <YAxis domain={[0, 100]} tick={{ fontSize: 11 }} />
+                              <Tooltip formatter={(v, n, p) => [`${v}%`, p.payload.fullName]} />
+                              <Bar dataKey="pct" radius={[6, 6, 0, 0]}>
+                                {guruChartData.map((d, i) => (
+                                  <Cell key={i} fill={!d.hasData ? toneColor.neutral : d.pct >= 75 ? toneColor.good : d.pct >= 40 ? toneColor.warn : toneColor.bad} />
+                                ))}
+                              </Bar>
+                            </BarChart>
+                          </ResponsiveContainer>
+                        </div>
+                      </div>
+                    )}
                     {CONCEPT_ORDER.map((c) => {
                       const m = guruConceptMastery(c); const pct = m ? Math.round(m * 100) : 0;
                       const st = m === null ? { tone: "neutral" } : (pct >= 75 ? { tone: "good" } : pct >= 40 ? { tone: "warn" } : { tone: "bad" });
