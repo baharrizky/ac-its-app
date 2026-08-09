@@ -194,7 +194,7 @@ function overallPctOf(attempts) {
   return Math.round((tested.reduce((a, b) => a + b, 0) / CONCEPT_ORDER.length) * 100);
 }
 const toneColor = { good: "var(--teal)", warn: "var(--amber)", bad: "var(--rose)", neutral: "var(--muted)" };
-const CHART_PINK = { dark: "#EC4899", mid: "#F472B6", light: "#FBCFE8", pale: "#E0F2FE" };
+const GURU_PALETTE = { strong: "#7C5CFC", mid: "#A78BFA", soft: "#F472B6", pale: "#EEE9FF" };
 
 // ---------------- Komponen: MathText — merender notasi LaTeX asli pakai KaTeX ----------------
 function KaTeXSpan({ tex, block = false }) {
@@ -242,7 +242,7 @@ function ExpFunctionCharts() {
             <XAxis dataKey="x" tick={{ fontSize: 11 }} />
             <YAxis tick={{ fontSize: 11 }} />
             <Tooltip formatter={(v) => [v, "y"]} labelFormatter={(l) => `x = ${l}`} />
-            <Line type="monotone" dataKey="y" stroke={CHART_PINK.dark} strokeWidth={2.5} dot={{ r: 3 }} />
+            <Line type="monotone" dataKey="y" stroke={GURU_PALETTE.strong} strokeWidth={2.5} dot={{ r: 3 }} />
           </LineChart>
         </ResponsiveContainer>
         <p style={{ fontSize: 12, color: "var(--muted)", marginTop: 6 }}>Grafik naik semakin cepat — nilai b lebih dari 1.</p>
@@ -255,7 +255,7 @@ function ExpFunctionCharts() {
             <XAxis dataKey="x" tick={{ fontSize: 11 }} />
             <YAxis tick={{ fontSize: 11 }} />
             <Tooltip formatter={(v) => [v, "y"]} labelFormatter={(l) => `x = ${l}`} />
-            <Line type="monotone" dataKey="y" stroke={CHART_PINK.mid} strokeWidth={2.5} dot={{ r: 3 }} />
+            <Line type="monotone" dataKey="y" stroke={GURU_PALETTE.soft} strokeWidth={2.5} dot={{ r: 3 }} />
           </LineChart>
         </ResponsiveContainer>
         <p style={{ fontSize: 12, color: "var(--muted)", marginTop: 6 }}>Grafik turun mendekati nol — nilai b antara 0 dan 1.</p>
@@ -779,10 +779,10 @@ function AppInner() {
       else kurang++;
     });
     return [
-      { name: "Baik (≥75%)", value: baik, color: CHART_PINK.dark },
-      { name: "Cukup (40–74%)", value: cukup, color: CHART_PINK.mid },
-      { name: "Kurang (<40%)", value: kurang, color: CHART_PINK.light },
-      { name: "Belum diuji", value: belum, color: CHART_PINK.pale },
+      { name: "Baik (≥75%)", value: baik, color: GURU_PALETTE.strong },
+      { name: "Cukup (40–74%)", value: cukup, color: GURU_PALETTE.mid },
+      { name: "Kurang (<40%)", value: kurang, color: GURU_PALETTE.soft },
+      { name: "Belum diuji", value: belum, color: GURU_PALETTE.pale },
     ].filter((d) => d.value > 0);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [guruFilteredStudents]);
@@ -1333,7 +1333,7 @@ function AppInner() {
                               <Tooltip formatter={(v, n, p) => [`${v}%`, p.payload.fullName]} />
                               <Bar dataKey="pct" radius={[6, 6, 0, 0]}>
                                 {guruChartData.map((d, i) => (
-                                  <Cell key={i} fill={!d.hasData ? CHART_PINK.pale : d.pct >= 75 ? CHART_PINK.dark : d.pct >= 40 ? CHART_PINK.mid : CHART_PINK.light} />
+                                  <Cell key={i} fill={!d.hasData ? GURU_PALETTE.pale : d.pct >= 75 ? GURU_PALETTE.strong : d.pct >= 40 ? GURU_PALETTE.mid : GURU_PALETTE.soft} />
                                 ))}
                               </Bar>
                             </BarChart>
@@ -1343,11 +1343,11 @@ function AppInner() {
                     )}
                     {CONCEPT_ORDER.map((c) => {
                       const m = guruConceptMastery(c); const pct = m ? Math.round(m * 100) : 0;
-                      const st = m === null ? { tone: "neutral" } : (pct >= 75 ? { tone: "good" } : pct >= 40 ? { tone: "warn" } : { tone: "bad" });
+                      const barColor = m === null ? GURU_PALETTE.pale : pct >= 75 ? GURU_PALETTE.strong : pct >= 40 ? GURU_PALETTE.mid : GURU_PALETTE.soft;
                       return (
                         <div key={c} style={{ marginBottom: 12 }}>
                           <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13 }}><span>{CONCEPTS[c].name}</span><span>{m !== null ? pct + "%" : "–"}</span></div>
-                          <div className="bar-track"><div className="bar-fill" style={{ width: pct + "%", background: toneColor[st.tone] }} /></div>
+                          <div className="bar-track"><div className="bar-fill" style={{ width: pct + "%", background: barColor }} /></div>
                         </div>
                       );
                     })}
