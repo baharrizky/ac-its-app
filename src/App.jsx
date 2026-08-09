@@ -3,7 +3,7 @@ import katex from "katex";
 import "katex/dist/katex.min.css";
 import {
   PieChart, Pie, Cell, Tooltip, Legend, ResponsiveContainer,
-  BarChart, Bar, XAxis, YAxis, CartesianGrid,
+  BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid,
 } from "recharts";
 import {
   GraduationCap, LayoutDashboard, BookOpen, PenLine, TrendingUp, User,
@@ -226,6 +226,41 @@ function MathText({ text }) {
           : <span key={i}>{part}</span>
       )}
     </>
+  );
+}
+// ---------------- Komponen: grafik contoh pertumbuhan & peluruhan eksponensial (untuk materi E10) ----------------
+const EXP_GROWTH_DATA = Array.from({ length: 7 }, (_, x) => ({ x, y: Math.round(Math.pow(2, x) * 10) / 10 }));
+const EXP_DECAY_DATA = Array.from({ length: 7 }, (_, x) => ({ x, y: Math.round(100 * Math.pow(0.6, x) * 10) / 10 }));
+function ExpFunctionCharts() {
+  return (
+    <div style={{ display: "flex", gap: 14, flexWrap: "wrap", marginTop: 14 }}>
+      <div className="card" style={{ flex: "1 1 260px", minWidth: 240 }}>
+        <div className="tag-eyebrow" style={{ marginBottom: 8 }}>Grafik Pertumbuhan (b &gt; 1) · contoh y = 2ˣ</div>
+        <ResponsiveContainer width="100%" height={180}>
+          <LineChart data={EXP_GROWTH_DATA} margin={{ top: 4, right: 8, left: -20, bottom: 4 }}>
+            <CartesianGrid strokeDasharray="3 3" vertical={false} />
+            <XAxis dataKey="x" tick={{ fontSize: 11 }} />
+            <YAxis tick={{ fontSize: 11 }} />
+            <Tooltip formatter={(v) => [v, "y"]} labelFormatter={(l) => `x = ${l}`} />
+            <Line type="monotone" dataKey="y" stroke={CHART_PINK.dark} strokeWidth={2.5} dot={{ r: 3 }} />
+          </LineChart>
+        </ResponsiveContainer>
+        <p style={{ fontSize: 12, color: "var(--muted)", marginTop: 6 }}>Grafik naik semakin cepat — nilai b lebih dari 1.</p>
+      </div>
+      <div className="card" style={{ flex: "1 1 260px", minWidth: 240 }}>
+        <div className="tag-eyebrow" style={{ marginBottom: 8 }}>Grafik Peluruhan (0 &lt; b &lt; 1) · contoh y = 100·(0,6)ˣ</div>
+        <ResponsiveContainer width="100%" height={180}>
+          <LineChart data={EXP_DECAY_DATA} margin={{ top: 4, right: 8, left: -20, bottom: 4 }}>
+            <CartesianGrid strokeDasharray="3 3" vertical={false} />
+            <XAxis dataKey="x" tick={{ fontSize: 11 }} />
+            <YAxis tick={{ fontSize: 11 }} />
+            <Tooltip formatter={(v) => [v, "y"]} labelFormatter={(l) => `x = ${l}`} />
+            <Line type="monotone" dataKey="y" stroke={CHART_PINK.mid} strokeWidth={2.5} dot={{ r: 3 }} />
+          </LineChart>
+        </ResponsiveContainer>
+        <p style={{ fontSize: 12, color: "var(--muted)", marginTop: 6 }}>Grafik turun mendekati nol — nilai b antara 0 dan 1.</p>
+      </div>
+    </div>
   );
 }
 const AVATAR_GRADIENTS = [
@@ -1028,6 +1063,7 @@ function AppInner() {
                         <div key={i} className="math-box"><MathText text={line} /></div>
                       ))}
                     </div>
+                    {activeConcept === "E10" && <ExpFunctionCharts />}
                     <div style={{ marginTop: 18 }}>
                       <div style={{ fontSize: 12.5, color: "var(--muted)", marginBottom: 10, fontWeight: 600 }}>Sudah paham? Lanjutkan ke:</div>
                       <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
