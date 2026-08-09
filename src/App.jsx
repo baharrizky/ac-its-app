@@ -1,4 +1,6 @@
 import React, { useState, useMemo, useEffect, useRef } from "react";
+import katex from "katex";
+import "katex/dist/katex.min.css";
 import {
   GraduationCap, LayoutDashboard, BookOpen, PenLine, TrendingUp, User,
   Lightbulb, CheckCircle2, AlertTriangle, ArrowRight, ArrowLeft, LogOut, Database, Users,
@@ -189,61 +191,37 @@ function overallPctOf(attempts) {
 }
 const toneColor = { good: "var(--teal)", warn: "var(--amber)", bad: "var(--rose)", neutral: "var(--muted)" };
 
-// ---------------- Komponen: MathText — merender notasi matematika (pangkat, akar, pecahan) ----------------
-const SUP_MAP = { "⁰": "0", "¹": "1", "²": "2", "³": "3", "⁴": "4", "⁵": "5", "⁶": "6", "⁷": "7", "⁸": "8", "⁹": "9", "⁻": "-", "⁺": "+", "ⁿ": "n", "ᵐ": "m", "ˣ": "x", "ʸ": "y", "⁽": "(", "⁾": ")" };
-const SUP_CHARS = Object.keys(SUP_MAP).join("");
-function toNormalFromSup(str) {
-  return str.split("").map((c) => SUP_MAP[c] || c).join("");
-}
-function applyMathPattern(nodes, regex, render) {
-  const out = [];
-  nodes.forEach((node, ni) => {
-    if (typeof node !== "string") { out.push(node); return; }
-    const re = new RegExp(regex.source, regex.flags.includes("g") ? regex.flags : regex.flags + "g");
-    let lastIndex = 0, m, k = 0;
-    while ((m = re.exec(node))) {
-      if (m.index > lastIndex) out.push(node.slice(lastIndex, m.index));
-      out.push(render(m, `m-${ni}-${m.index}-${k++}`));
-      lastIndex = m.index + m[0].length;
-      if (m[0].length === 0) re.lastIndex++;
-    }
-    if (lastIndex < node.length) out.push(node.slice(lastIndex));
-  });
-  return out;
+// ---------------- Komponen: MathText — merender notasi LaTeX asli pakai KaTeX ----------------
+function KaTeXSpan({ tex, block = false }) {
+  let html;
+  try {
+    html = katex.renderToString(tex, { throwOnError: false, displayMode: block });
+  } catch (e) {
+    html = tex;
+  }
+  return <span className={block ? "math-block" : "math-inline"} dangerouslySetInnerHTML={{ __html: html }} />;
 }
 function MathText({ text }) {
-  if (!text) return null;
-  let nodes = [String(text)];
+  if (text === null || text === undefined || text === "") return null;
+  const raw = Array.isArray(text) ? text.join("\n") : String(text);
+  if (!raw) return null;
 
-  // Akar: (indeks opsional)√(isi) atau (indeks opsional)√token
-  nodes = applyMathPattern(nodes, /([⁰¹²³⁴⁵⁶⁷⁸⁹ⁿ])?√\(([^()]+)\)/, (m, key) => (
-    <span key={key} className="math-radical">
-      {m[1] && <sup className="math-radical-idx">{toNormalFromSup(m[1])}</sup>}
-      <span className="math-radical-sign">√</span>
-      <span className="math-radical-body"><MathText text={m[2]} /></span>
-    </span>
-  ));
-  nodes = applyMathPattern(nodes, /([⁰¹²³⁴⁵⁶⁷⁸⁹ⁿ])?√([A-Za-z0-9]+)/, (m, key) => (
-    <span key={key} className="math-radical">
-      {m[1] && <sup className="math-radical-idx">{toNormalFromSup(m[1])}</sup>}
-      <span className="math-radical-sign">√</span>
-      <span className="math-radical-body">{m[2]}</span>
-    </span>
-  ));
-  // Pangkat pakai tanda ^: ^(isi) atau ^token
-  nodes = applyMathPattern(nodes, /\^\(([^()]+)\)/, (m, key) => <sup key={key} className="math-sup">{m[1]}</sup>);
-  nodes = applyMathPattern(nodes, /\^(-?[A-Za-z0-9]+)/, (m, key) => <sup key={key} className="math-sup">{m[1]}</sup>);
-  // Karakter superskrip unicode yang sudah ada (²³⁻ⁿ dst) -> dirapikan jadi <sup>
-  nodes = applyMathPattern(nodes, new RegExp(`[${SUP_CHARS}]+`), (m, key) => <sup key={key} className="math-sup">{toNormalFromSup(m[0])}</sup>);
-  // Pecahan sederhana angka/angka: 1/9 -> pecahan bertingkat
-  nodes = applyMathPattern(nodes, /\b(\d+)\/(\d+)\b/, (m, key) => (
-    <span key={key} className="math-frac">
-      <span className="math-frac-num">{m[1]}</span>
-      <span className="math-frac-den">{m[2]}</span>
-    </span>
-  ));
+  // String tanpa tanda $ tapi mengandung perintah LaTeX (mis. formula/contoh) -> render seluruhnya sebagai math block
+  if (!raw.includes("$") && /\\[a-zA-Z]/.test(raw)) {
+    return <KaTeXSpan tex={raw} block />;
+  }
 
-  return <>{nodes}</>;
+  // Teks biasa dengan potongan matematika diapit tanda $...$ (mis. penjelasan, hint, soal)
+  const parts = raw.split(/(\$[^$]+\$)/g);
+  return (
+    <>
+      {parts.map((part, i) =>
+        part.startsWith("$") && part.endsWith("$") && part.length > 1
+          ? <KaTeXSpan key={i} tex={part.slice(1, -1)} />
+          : <span key={i}>{part}</span>
+      )}
+    </>
+  );
 }
 const AVATAR_GRADIENTS = [
   "linear-gradient(135deg,#7C5CFC,#F472B6)",
@@ -1011,7 +989,9 @@ function AppInner() {
                   <div className="card">
                     {redirectNote && <div className="misc-item" style={{ marginBottom: 12 }}>↳ {redirectNote}</div>}
                     <div className="tag-eyebrow">Materi · {CONCEPTS[activeConcept].name}</div>
-                    <div className="qtext"><MathText text={MATERI[activeConcept].formula} /></div>
+                    <div className="qtext">
+                      {MATERI[activeConcept].formula.map((f, i) => <MathText key={i} text={f} />)}
+                    </div>
                     <p style={{ fontSize: 14, lineHeight: 1.6 }}>{MATERI[activeConcept].penjelasan}</p>
                     <div style={{ marginTop: 14 }}>
                       <div className="tag-eyebrow" style={{ marginBottom: 8 }}>Contoh</div>

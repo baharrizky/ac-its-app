@@ -11,6 +11,7 @@
   },
   "dependencies": {
     "firebase": "^12.17.0",
+    "katex": "^0.18.3",
     "lucide-react": "^1.28.0",
     "package": "^1.0.1",
     "react": "^19.2.8",
