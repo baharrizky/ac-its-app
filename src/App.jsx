@@ -642,7 +642,9 @@ function AppInner() {
 
   async function submitAuth() {
     setAuthError("");
-    if (!authEmail.trim() || !authPassword.trim() || (authTab === "daftar" && (!authName.trim() || !authKelas.trim() || !authSekolah.trim()))) {
+    const missingBase = !authEmail.trim() || !authPassword.trim() || (authTab === "daftar" && !authName.trim());
+    const missingSiswaFields = authTab === "daftar" && authRole === "siswa" && (!authKelas.trim() || !authSekolah.trim());
+    if (missingBase || missingSiswaFields) {
       setAuthError("Lengkapi semua kolom terlebih dahulu.");
       return;
     }
