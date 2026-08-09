@@ -992,7 +992,7 @@ function AppInner() {
                     <div className="qtext">
                       {MATERI[activeConcept].formula.map((f, i) => <MathText key={i} text={f} />)}
                     </div>
-                    <p style={{ fontSize: 14, lineHeight: 1.6 }}>{MATERI[activeConcept].penjelasan}</p>
+                    <p style={{ fontSize: 14, lineHeight: 1.6 }}><MathText text={MATERI[activeConcept].penjelasan} /></p>
                     <div style={{ marginTop: 14 }}>
                       <div className="tag-eyebrow" style={{ marginBottom: 8 }}>Contoh</div>
                       {MATERI[activeConcept].contoh.map((line, i) => (
