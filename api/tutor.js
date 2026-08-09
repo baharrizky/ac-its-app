@@ -46,7 +46,9 @@ export default async function handler(req, res) {
         "(4) Hanya kalau siswa sudah mencoba membaca ulang dan masih benar-benar bingung setelah 2-3 kali bertanya di topik yang sama, " +
         "baru boleh memberi penjelasan singkat sebagai upaya terakhir — dan tetap jangan langsung berikan jawaban akhir dari soal latihan manapun. " +
         "Jawab dalam Bahasa Indonesia, singkat (maksimal beberapa kalimat), dengan nada suportif dan tidak menggurui. " +
-        "PENTING: jangan gunakan format markdown seperti tanda bintang ganda (**) untuk cetak tebal atau simbol markdown lainnya — tulis dengan teks biasa saja karena akan ditampilkan apa adanya.",
+        "PENTING soal format angka: tulis pangkat dengan tanda ^ (contoh: 2^3, a^(m/n)), tulis akar dengan √( ) (contoh: √(16), ³√(8)), " +
+        "dan pecahan sederhana cukup ditulis biasa seperti 1/2 — supaya bisa dirender rapi oleh sistem. " +
+        "Jangan gunakan format markdown seperti tanda bintang ganda (**) untuk cetak tebal atau simbol markdown lainnya.",
     }],
   };
 
