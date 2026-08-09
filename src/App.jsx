@@ -194,6 +194,7 @@ function overallPctOf(attempts) {
   return Math.round((tested.reduce((a, b) => a + b, 0) / CONCEPT_ORDER.length) * 100);
 }
 const toneColor = { good: "var(--teal)", warn: "var(--amber)", bad: "var(--rose)", neutral: "var(--muted)" };
+const CHART_PINK = { dark: "#DB2777", mid: "#EC4899", light: "#F9A8D4", pale: "#FBE4EF" };
 
 // ---------------- Komponen: MathText — merender notasi LaTeX asli pakai KaTeX ----------------
 function KaTeXSpan({ tex, block = false }) {
@@ -743,10 +744,10 @@ function AppInner() {
       else kurang++;
     });
     return [
-      { name: "Baik (≥75%)", value: baik, color: toneColor.good },
-      { name: "Cukup (40–74%)", value: cukup, color: toneColor.warn },
-      { name: "Kurang (<40%)", value: kurang, color: toneColor.bad },
-      { name: "Belum diuji", value: belum, color: toneColor.neutral },
+      { name: "Baik (≥75%)", value: baik, color: CHART_PINK.dark },
+      { name: "Cukup (40–74%)", value: cukup, color: CHART_PINK.mid },
+      { name: "Kurang (<40%)", value: kurang, color: CHART_PINK.light },
+      { name: "Belum diuji", value: belum, color: CHART_PINK.pale },
     ].filter((d) => d.value > 0);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [guruFilteredStudents]);
@@ -1296,7 +1297,7 @@ function AppInner() {
                               <Tooltip formatter={(v, n, p) => [`${v}%`, p.payload.fullName]} />
                               <Bar dataKey="pct" radius={[6, 6, 0, 0]}>
                                 {guruChartData.map((d, i) => (
-                                  <Cell key={i} fill={!d.hasData ? toneColor.neutral : d.pct >= 75 ? toneColor.good : d.pct >= 40 ? toneColor.warn : toneColor.bad} />
+                                  <Cell key={i} fill={!d.hasData ? CHART_PINK.pale : d.pct >= 75 ? CHART_PINK.dark : d.pct >= 40 ? CHART_PINK.mid : CHART_PINK.light} />
                                 ))}
                               </Bar>
                             </BarChart>
