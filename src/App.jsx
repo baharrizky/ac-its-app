@@ -1015,7 +1015,7 @@ function AppInner() {
                     <p style={{ fontSize: 14, lineHeight: 1.6 }}>{MATERI[activeConcept].penjelasan}</p>
                     <div style={{ marginTop: 14 }}>
                       <div className="tag-eyebrow" style={{ marginBottom: 8 }}>Contoh</div>
-                      {MATERI[activeConcept].contoh.split("\n").map((line, i) => (
+                      {MATERI[activeConcept].contoh.map((line, i) => (
                         <div key={i} className="math-box"><MathText text={line} /></div>
                       ))}
                     </div>
