@@ -479,8 +479,16 @@ function AppInner() {
   const [editAvatarColor, setEditAvatarColor] = useState(0);
   const [savingProfil, setSavingProfil] = useState(false);
 
+  // ---------- Ujian: tes 15 soal acak, murni mengukur kemampuan (tidak memengaruhi mastery/attempts) ----------
+  const [examQuestions, setExamQuestions] = useState([]);
+  const [examAnswers, setExamAnswers] = useState([]);
+  const [examCurrent, setExamCurrent] = useState(0);
+  const [examResult, setExamResult] = useState(null);
+  const [examHistory, setExamHistory] = useState([]);
+  const EXAM_LENGTH = 15;
+
   // ---------- Navigasi ----------
-  const [screen, setScreen] = useState("dashboard"); // dashboard | materi | latihan | diagnosis | hint | progress | profil | komikList | komikChapter
+  const [screen, setScreen] = useState("dashboard"); // dashboard | materi | latihan | diagnosis | hint | ujian | ujianSoal | ujianHasil | progress | profil | komikList | komikChapter
   const [activeConcept, setActiveConcept] = useState("E1");
   const [consecWrong, setConsecWrong] = useState(0);
   const [hintTier, setHintTier] = useState(0);
@@ -514,6 +522,10 @@ function AppInner() {
           setMisconceptions([]);
           setPoolIndex(EMPTY_POOLIDX);
           setTutorMessages([]);
+          setExamHistory([]);
+          setExamQuestions([]);
+          setExamAnswers([]);
+          setExamResult(null);
           setProgressLoaded(false);
           setMode("landing");
         }
@@ -541,6 +553,7 @@ function AppInner() {
           setMisconceptions(d.misconceptions || []);
           setPoolIndex({ ...EMPTY_POOLIDX, ...(d.poolIndex || {}) });
           setTutorMessages(d.tutorMessages || []);
+          setExamHistory(d.examHistory || []);
           loadedStreak = d.streak || 0;
           loadedLastActive = d.lastActiveDate || null;
         }
@@ -570,8 +583,8 @@ function AppInner() {
 
   useEffect(() => {
     if (!authUser || !profile || profile.role !== "siswa" || !progressLoaded) return;
-    setDoc(doc(db, "progress", authUser.uid), { attempts, misconceptions, poolIndex, streak, lastActiveDate, tutorMessages: tutorMessages.slice(-30) }, { merge: true }).catch(() => {});
-  }, [attempts, misconceptions, poolIndex, streak, lastActiveDate, tutorMessages, authUser, profile, progressLoaded]);
+    setDoc(doc(db, "progress", authUser.uid), { attempts, misconceptions, poolIndex, streak, lastActiveDate, tutorMessages: tutorMessages.slice(-30), examHistory: examHistory.slice(0, 10) }, { merge: true }).catch(() => {});
+  }, [attempts, misconceptions, poolIndex, streak, lastActiveDate, tutorMessages, examHistory, authUser, profile, progressLoaded]);
 
   const statuses = useMemo(() => {
     const s = {};
@@ -656,6 +669,65 @@ function AppInner() {
       setDiag(null);
       setScreen("latihan");
     }
+  }
+
+  function generateExam() {
+    // Ambil 1 soal acak dari tiap sub-materi dulu supaya cakupannya merata,
+    // baru tambahkan sisanya secara acak dari seluruh bank soal sampai genap 15.
+    const shuffle = (arr) => [...arr].sort(() => Math.random() - 0.5);
+    const onePerConcept = shuffle(
+      CONCEPT_ORDER.map((c) => {
+        const pool = PRACTICE_POOL[c] || [];
+        if (pool.length === 0) return null;
+        const q = pool[Math.floor(Math.random() * pool.length)];
+        return { concept: c, ...q };
+      }).filter(Boolean)
+    );
+    let picked = onePerConcept.slice(0, EXAM_LENGTH);
+    if (picked.length < EXAM_LENGTH) {
+      const used = new Set(picked.map((q) => q.concept + "|" + q.text));
+      const rest = shuffle(
+        CONCEPT_ORDER.flatMap((c) => (PRACTICE_POOL[c] || []).map((q) => ({ concept: c, ...q }))).filter(
+          (q) => !used.has(q.concept + "|" + q.text)
+        )
+      );
+      picked = [...picked, ...rest.slice(0, EXAM_LENGTH - picked.length)];
+    }
+    picked = shuffle(picked);
+    setExamQuestions(picked);
+    setExamAnswers(new Array(picked.length).fill(null));
+    setExamCurrent(0);
+    setExamResult(null);
+    setScreen("ujianSoal");
+  }
+
+  function selectExamAnswer(i) {
+    setExamAnswers((a) => { const next = [...a]; next[examCurrent] = i; return next; });
+  }
+
+  function examPrev() {
+    if (examCurrent > 0) setExamCurrent((c) => c - 1);
+  }
+
+  function examNext() {
+    if (examCurrent < examQuestions.length - 1) setExamCurrent((c) => c + 1);
+    else finishExam();
+  }
+
+  function finishExam() {
+    let correct = 0;
+    const details = examQuestions.map((q, i) => {
+      const ansIdx = examAnswers[i];
+      const isCorrect = ansIdx !== null && ansIdx !== undefined && !!q.options[ansIdx]?.correct;
+      if (isCorrect) correct++;
+      return { concept: q.concept, text: q.text, options: q.options, selected: ansIdx, correct: isCorrect };
+    });
+    const total = examQuestions.length;
+    const score = total > 0 ? Math.round((correct / total) * 100) : 0;
+    const result = { score, correct, total, date: new Date().toISOString(), details };
+    setExamResult(result);
+    setExamHistory((h) => [result, ...h].slice(0, 10));
+    setScreen("ujianHasil");
   }
 
   async function logout() {
@@ -978,6 +1050,7 @@ function AppInner() {
                 <button className={"sidebar-navbtn" + (screen === "tutorAI" ? " active" : "")} onClick={() => { setTutorFocusConcept(null); setScreen("tutorAI"); }}><MessageCircle size={17} />Tutor AI</button>
                 <button className={"sidebar-navbtn" + (screen === "materiList" || screen === "materi" ? " active" : "")} onClick={() => setScreen("materiList")}><BookOpen size={17} />Materi</button>
                 <button className={"sidebar-navbtn" + (screen === "latihanList" || screen === "latihan" || screen === "diagnosis" || screen === "hint" ? " active" : "")} onClick={() => setScreen("latihanList")}><PenLine size={17} />Latihan</button>
+                <button className={"sidebar-navbtn" + (screen === "ujian" || screen === "ujianSoal" || screen === "ujianHasil" ? " active" : "")} onClick={() => setScreen("ujian")}><ClipboardList size={17} />Ujian</button>
                 <button className={"sidebar-navbtn" + (screen === "progress" ? " active" : "")} onClick={() => setScreen("progress")}><TrendingUp size={17} />Progress</button>
                 <button className={"sidebar-navbtn" + (screen === "leaderboard" ? " active" : "")} onClick={() => setScreen("leaderboard")}><Trophy size={17} />Peringkat</button>
                 <button className={"sidebar-navbtn" + (screen === "badges" ? " active" : "")} onClick={() => setScreen("badges")}><Award size={17} />Koleksi Badge</button>
@@ -1009,6 +1082,7 @@ function AppInner() {
               <button className={"sidebar-navbtn" + (screen === "tutorAI" ? " active" : "")} onClick={() => { setTutorFocusConcept(null); setScreen("tutorAI"); }}><MessageCircle size={17} />Tutor</button>
               <button className={"sidebar-navbtn" + (screen === "materiList" || screen === "materi" ? " active" : "")} onClick={() => setScreen("materiList")}><BookOpen size={17} />Materi</button>
               <button className={"sidebar-navbtn" + (screen === "latihanList" || screen === "latihan" || screen === "diagnosis" || screen === "hint" ? " active" : "")} onClick={() => setScreen("latihanList")}><PenLine size={17} />Latihan</button>
+              <button className={"sidebar-navbtn" + (screen === "ujian" || screen === "ujianSoal" || screen === "ujianHasil" ? " active" : "")} onClick={() => setScreen("ujian")}><ClipboardList size={17} />Ujian</button>
               <button className={"sidebar-navbtn" + (screen === "progress" ? " active" : "")} onClick={() => setScreen("progress")}><TrendingUp size={17} />Progress</button>
               <button className={"sidebar-navbtn" + (screen === "leaderboard" ? " active" : "")} onClick={() => setScreen("leaderboard")}><Trophy size={17} />Rank</button>
               <button className={"sidebar-navbtn" + (screen === "badges" ? " active" : "")} onClick={() => setScreen("badges")}><Award size={17} />Badge</button>
@@ -1215,6 +1289,89 @@ function AppInner() {
                       </div>
                     </div>
                     <button className="btn-primary" onClick={afterHint}>{hintTier === 3 ? "Mengerti, Lanjut" : "Mengerti, Coba Lagi"} <ArrowRight size={15} /></button>
+                  </div>
+                )}
+
+                {progressLoaded && screen === "ujian" && (
+                  <div className="card">
+                    <div className="tag-eyebrow">Ujian</div>
+                    <h2 className="disp" style={{ fontSize: 19, marginBottom: 4 }}>Uji Kemampuanmu</h2>
+                    <p style={{ fontSize: 12.5, color: "var(--muted)", marginBottom: 16 }}>
+                      {EXAM_LENGTH} soal pilihan ganda diambil acak dari seluruh sub-materi eksponen. Tanpa hint atau petunjuk — murni untuk mengetes kemampuanmu. Hasil lengkap muncul di akhir dan tidak memengaruhi progress belajar di menu Latihan.
+                    </p>
+                    <button className="btn-primary" onClick={generateExam}><ClipboardList size={15} /> Mulai Ujian ({EXAM_LENGTH} Soal)</button>
+
+                    {examHistory.length > 0 && (
+                      <div style={{ marginTop: 22 }}>
+                        <div className="tag-eyebrow">Riwayat Ujian</div>
+                        {examHistory.map((h, i) => {
+                          const tone = h.score >= 75 ? "good" : h.score >= 50 ? "warn" : "bad";
+                          return (
+                            <div key={i} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 0", borderBottom: i < examHistory.length - 1 ? "1px solid var(--line)" : "none" }}>
+                              <span style={{ fontSize: 12.5, color: "var(--muted)" }}>
+                                {new Date(h.date).toLocaleDateString("id-ID", { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" })}
+                              </span>
+                              <span className="pill" style={{ background: toneColor[tone] + "22", color: toneColor[tone] }}>{h.correct}/{h.total} · {h.score}%</span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {progressLoaded && screen === "ujianSoal" && examQuestions.length > 0 && (
+                  <div className="card">
+                    <div className="tag-eyebrow">Ujian · Soal {examCurrent + 1} dari {examQuestions.length}</div>
+                    <div className="bar-track" style={{ marginBottom: 14 }}><div className="bar-fill" style={{ width: `${((examCurrent + 1) / examQuestions.length) * 100}%` }} /></div>
+                    <div className="qtext"><MathText text={examQuestions[examCurrent].text} /></div>
+                    {examQuestions[examCurrent].options.map((opt, i) => (
+                      <button key={i} className={"opt" + (examAnswers[examCurrent] === i ? " picked" : "")} onClick={() => selectExamAnswer(i)}><MathText text={opt.text} /></button>
+                    ))}
+                    <div style={{ display: "flex", gap: 10, marginTop: 14 }}>
+                      <button className="btn-ghost" disabled={examCurrent === 0} onClick={examPrev}><ArrowLeft size={15} /> Sebelumnya</button>
+                      <button className="btn-primary" disabled={examAnswers[examCurrent] === null} onClick={examNext}>
+                        {examCurrent === examQuestions.length - 1 ? <>Selesai &amp; Lihat Hasil <ArrowRight size={15} /></> : <>Berikutnya <ArrowRight size={15} /></>}
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {progressLoaded && screen === "ujianHasil" && examResult && (
+                  <div className="card">
+                    <div className="tag-eyebrow">Hasil Ujian</div>
+                    <div className="hero-card" style={{ marginBottom: 18, textAlign: "center" }}>
+                      <div style={{ fontSize: 12, opacity: 0.85, fontWeight: 700, letterSpacing: ".04em", textTransform: "uppercase" }}>Skor Kamu</div>
+                      <div className="disp" style={{ fontSize: 42, margin: "6px 0" }}>{examResult.score}</div>
+                      <div style={{ fontSize: 13.5, opacity: 0.9 }}>{examResult.correct} dari {examResult.total} soal benar</div>
+                    </div>
+
+                    <div className="tag-eyebrow" style={{ marginBottom: 8 }}>Pembahasan</div>
+                    {examResult.details.map((d, i) => (
+                      <div key={i} style={{ marginBottom: 16, paddingBottom: 16, borderBottom: i < examResult.details.length - 1 ? "1px solid var(--line)" : "none" }}>
+                        <div style={{ fontSize: 11, color: "var(--muted)", marginBottom: 4 }} className="mono">Soal {i + 1} · {CONCEPTS[d.concept].name}</div>
+                        <div style={{ fontSize: 15, marginBottom: 10 }}><MathText text={d.text} /></div>
+                        {d.options.map((opt, oi) => {
+                          const isCorrectOpt = !!opt.correct;
+                          const isSelected = d.selected === oi;
+                          const style = isCorrectOpt
+                            ? { borderColor: "var(--teal)", background: "var(--teal-light)" }
+                            : isSelected
+                            ? { borderColor: "var(--rose)", background: "var(--rose-light)" }
+                            : {};
+                          return (
+                            <div key={oi} className="opt" style={{ ...style, cursor: "default", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
+                              <MathText text={opt.text} />
+                              {isCorrectOpt && <CheckCircle2 size={15} style={{ color: "var(--teal)", flexShrink: 0 }} />}
+                              {isSelected && !isCorrectOpt && <AlertTriangle size={15} style={{ color: "var(--rose)", flexShrink: 0 }} />}
+                            </div>
+                          );
+                        })}
+                        {(d.selected === null || d.selected === undefined) && <div style={{ fontSize: 12, color: "var(--rose)", marginTop: 2 }}>Tidak dijawab.</div>}
+                      </div>
+                    ))}
+
+                    <button className="btn-primary" onClick={() => setScreen("ujian")}><ArrowLeft size={15} /> Kembali ke Ujian</button>
                   </div>
                 )}
 
