@@ -269,6 +269,14 @@ function overallPctOf(attempts) {
 }
 const toneColor = { good: "var(--teal)", warn: "var(--amber)", bad: "var(--rose)", neutral: "var(--muted)" };
 const GURU_PALETTE = { strong: "#F472B6", mid: "#C4B5FD", soft: "#A78BFA", pale: "#F5F3FF" };
+function formatDuration(sec) {
+  if (sec === null || sec === undefined || isNaN(sec)) return "-";
+  const s = Math.max(0, Math.round(sec));
+  const m = Math.floor(s / 60);
+  const r = s % 60;
+  if (m === 0) return `${r} detik`;
+  return `${m} menit ${r} detik`;
+}
 
 // ---------------- Komponen: MathText — merender notasi LaTeX asli pakai KaTeX ----------------
 function KaTeXSpan({ tex, block = false }) {
@@ -485,6 +493,10 @@ function AppInner() {
   const [examCurrent, setExamCurrent] = useState(0);
   const [examResult, setExamResult] = useState(null);
   const [examHistory, setExamHistory] = useState([]);
+  const [examStartTime, setExamStartTime] = useState(null);
+  const [examLocked, setExamLocked] = useState(false);
+  const [examLeaveWarning, setExamLeaveWarning] = useState(false);
+  const [examViolations, setExamViolations] = useState(0);
   const EXAM_LENGTH = 15;
 
   // ---------- Navigasi ----------
@@ -526,6 +538,9 @@ function AppInner() {
           setExamQuestions([]);
           setExamAnswers([]);
           setExamResult(null);
+          setExamLocked(false);
+          setExamLeaveWarning(false);
+          setExamStartTime(null);
           setProgressLoaded(false);
           setMode("landing");
         }
@@ -585,6 +600,76 @@ function AppInner() {
     if (!authUser || !profile || profile.role !== "siswa" || !progressLoaded) return;
     setDoc(doc(db, "progress", authUser.uid), { attempts, misconceptions, poolIndex, streak, lastActiveDate, tutorMessages: tutorMessages.slice(-30), examHistory: examHistory.slice(0, 10) }, { merge: true }).catch(() => {});
   }, [attempts, misconceptions, poolIndex, streak, lastActiveDate, tutorMessages, examHistory, authUser, profile, progressLoaded]);
+
+  // ---------- Kunci laman ujian: mencegah siswa keluar/berpindah selama ujian berlangsung ----------
+  useEffect(() => {
+    if (!examLocked) return;
+
+    const handleBeforeUnload = (e) => {
+      e.preventDefault();
+      e.returnValue = "Ujian sedang berlangsung. Yakin ingin meninggalkan halaman ini?";
+      return e.returnValue;
+    };
+    const handleVisibility = () => {
+      if (document.hidden) {
+        setExamViolations((v) => v + 1);
+        setExamLeaveWarning(true);
+      }
+    };
+    const handleBlur = () => {
+      setExamLeaveWarning(true);
+    };
+    const handleFullscreenChange = () => {
+      if (!document.fullscreenElement) {
+        setExamViolations((v) => v + 1);
+        setExamLeaveWarning(true);
+      }
+    };
+    const handleContextMenu = (e) => e.preventDefault();
+    const handleKeyDown = (e) => {
+      const k = e.key.toLowerCase();
+      // Blokir shortcut umum untuk keluar/refresh/buka tab baru (sebatas yang bisa dicegah browser via JS)
+      if (
+        k === "f5" ||
+        k === "f11" ||
+        ((e.ctrlKey || e.metaKey) && ["r", "w", "t", "n"].includes(k))
+      ) {
+        e.preventDefault();
+      }
+    };
+    // Trik agar tombol "kembali" browser tidak langsung membawa siswa keluar dari halaman ujian
+    window.history.pushState(null, "", window.location.href);
+    const handlePopState = () => {
+      window.history.pushState(null, "", window.location.href);
+      setExamLeaveWarning(true);
+    };
+
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    document.addEventListener("visibilitychange", handleVisibility);
+    window.addEventListener("blur", handleBlur);
+    document.addEventListener("fullscreenchange", handleFullscreenChange);
+    document.addEventListener("contextmenu", handleContextMenu);
+    document.addEventListener("keydown", handleKeyDown);
+    window.addEventListener("popstate", handlePopState);
+
+    return () => {
+      window.removeEventListener("beforeunload", handleBeforeUnload);
+      document.removeEventListener("visibilitychange", handleVisibility);
+      window.removeEventListener("blur", handleBlur);
+      document.removeEventListener("fullscreenchange", handleFullscreenChange);
+      document.removeEventListener("contextmenu", handleContextMenu);
+      document.removeEventListener("keydown", handleKeyDown);
+      window.removeEventListener("popstate", handlePopState);
+    };
+  }, [examLocked]);
+
+  function resumeExamAfterWarning() {
+    setExamLeaveWarning(false);
+    try {
+      const el = document.documentElement;
+      if (!document.fullscreenElement && el.requestFullscreen) el.requestFullscreen().catch(() => {});
+    } catch (e) {}
+  }
 
   const statuses = useMemo(() => {
     const s = {};
@@ -710,7 +795,16 @@ function AppInner() {
     setExamAnswers(new Array(picked.length).fill(null));
     setExamCurrent(0);
     setExamResult(null);
+    setExamStartTime(Date.now());
+    setExamViolations(0);
+    setExamLeaveWarning(false);
+    setExamLocked(true);
     setScreen("ujianSoal");
+    // Minta mode layar penuh (butuh gestur pengguna, klik tombol "Mulai Ujian" ini memenuhi syarat itu)
+    try {
+      const el = document.documentElement;
+      if (el.requestFullscreen) el.requestFullscreen().catch(() => {});
+    } catch (e) {}
   }
 
   function selectExamAnswer(i) {
@@ -726,6 +820,10 @@ function AppInner() {
     else finishExam();
   }
 
+  function jumpToExamQuestion(idx) {
+    setExamCurrent(idx);
+  }
+
   function finishExam() {
     let correct = 0;
     const details = examQuestions.map((q, i) => {
@@ -736,9 +834,16 @@ function AppInner() {
     });
     const total = examQuestions.length;
     const score = total > 0 ? Math.round((correct / total) * 100) : 0;
-    const result = { score, correct, total, date: new Date().toISOString(), details };
+    const durationSec = examStartTime ? Math.round((Date.now() - examStartTime) / 1000) : null;
+    const result = { score, correct, total, date: new Date().toISOString(), details, durationSec, violations: examViolations };
     setExamResult(result);
     setExamHistory((h) => [result, ...h].slice(0, 10));
+    setExamLocked(false);
+    setExamLeaveWarning(false);
+    setExamStartTime(null);
+    try {
+      if (document.fullscreenElement && document.exitFullscreen) document.exitFullscreen().catch(() => {});
+    } catch (e) {}
     setScreen("ujianHasil");
   }
 
@@ -875,8 +980,8 @@ function AppInner() {
       for (const uDoc of usersSnap.docs) {
         const u = uDoc.data();
         const progSnap = await getDoc(doc(db, "progress", uDoc.id));
-        const prog = progSnap.exists() ? progSnap.data() : { attempts: EMPTY_ATTEMPTS, misconceptions: [] };
-        list.push({ uid: uDoc.id, name: u.name || "Siswa", kelas: u.kelas, sekolah: u.sekolah, attempts: prog.attempts || EMPTY_ATTEMPTS, misconceptions: prog.misconceptions || [] });
+        const prog = progSnap.exists() ? progSnap.data() : { attempts: EMPTY_ATTEMPTS, misconceptions: [], examHistory: [] };
+        list.push({ uid: uDoc.id, name: u.name || "Siswa", kelas: u.kelas, sekolah: u.sekolah, attempts: prog.attempts || EMPTY_ATTEMPTS, misconceptions: prog.misconceptions || [], examHistory: prog.examHistory || [] });
       }
       setGuruStudents(list);
     } catch (e) {}
@@ -948,6 +1053,18 @@ function AppInner() {
     () => guruFilteredStudents.flatMap((s) => (s.misconceptions || []).map((m) => ({ ...m, student: s.name }))),
     [guruFilteredStudents]
   );
+  const guruExamAttempts = useMemo(
+    () =>
+      guruFilteredStudents
+        .flatMap((s) => (s.examHistory || []).map((h) => ({ ...h, student: s.name, kelas: s.kelas })))
+        .sort((a, b) => new Date(b.date) - new Date(a.date)),
+    [guruFilteredStudents]
+  );
+  const guruAvgDurationSec = useMemo(() => {
+    const withDuration = guruExamAttempts.filter((h) => h.durationSec !== null && h.durationSec !== undefined);
+    if (withDuration.length === 0) return null;
+    return Math.round(withDuration.reduce((a, h) => a + h.durationSec, 0) / withDuration.length);
+  }, [guruExamAttempts]);
 
   async function exportGuruExcel() {
     const XLSX = await import("xlsx");
@@ -988,6 +1105,24 @@ function AppInner() {
   return (
     <div className="wrap">
       <GlobalStyle />
+
+      {examLocked && examLeaveWarning && (
+        <div style={{
+          position: "fixed", inset: 0, background: "rgba(30,27,51,0.92)", zIndex: 9999,
+          display: "flex", alignItems: "center", justifyContent: "center", padding: 20,
+        }}>
+          <div className="card" style={{ maxWidth: 380, textAlign: "center" }}>
+            <AlertTriangle size={30} style={{ color: "var(--rose)", marginBottom: 10 }} />
+            <h2 className="disp" style={{ fontSize: 17, marginBottom: 8 }}>Ujian Sedang Berlangsung</h2>
+            <p style={{ fontSize: 13, color: "var(--muted)", marginBottom: 16 }}>
+              Terdeteksi kamu mencoba meninggalkan atau berpindah dari laman ujian. Laman ujian terkunci sampai kamu menyelesaikan seluruh soal. Klik tombol di bawah untuk kembali mengerjakan.
+            </p>
+            <button className="btn-primary" style={{ width: "100%", justifyContent: "center" }} onClick={resumeExamAfterWarning}>
+              Kembali ke Ujian <ArrowRight size={15} />
+            </button>
+          </div>
+        </div>
+      )}
 
       {mode === "landing" && (
         <div className="body-area">
@@ -1053,7 +1188,7 @@ function AppInner() {
 
       {mode === "app" && profile && (
         <div className="app-shell">
-          <aside className="sidebar">
+          <aside className="sidebar" style={examLocked ? { pointerEvents: "none", opacity: 0.45 } : undefined}>
             <div className="sidebar-brand brand"><GraduationCap size={20} /> AC-ITS</div>
 
             {profile.role === "siswa" && (
@@ -1074,6 +1209,7 @@ function AppInner() {
               <nav className="sidebar-nav">
                 <button className={"sidebar-navbtn" + (guruTab === "beranda" ? " active" : "")} onClick={() => setGuruTab("beranda")}><LayoutDashboard size={17} />Beranda</button>
                 <button className={"sidebar-navbtn" + (guruTab === "analitik" ? " active" : "")} onClick={() => setGuruTab("analitik")}><TrendingUp size={17} />Analitik</button>
+                <button className={"sidebar-navbtn" + (guruTab === "ujian" ? " active" : "")} onClick={() => setGuruTab("ujian")}><Clock size={17} />Waktu Ujian</button>
                 <button className={"sidebar-navbtn" + (guruTab === "materi" ? " active" : "")} onClick={() => setGuruTab("materi")}><Database size={17} />Knowledge Base</button>
               </nav>
             )}
@@ -1089,7 +1225,7 @@ function AppInner() {
           </aside>
 
           {profile.role === "siswa" && (
-            <nav className="floating-nav">
+            <nav className="floating-nav" style={examLocked ? { pointerEvents: "none", opacity: 0.45 } : undefined}>
               <button className={"sidebar-navbtn" + (screen === "dashboard" ? " active" : "")} onClick={() => setScreen("dashboard")}><LayoutDashboard size={17} />Home</button>
               <button className={"sidebar-navbtn" + (screen === "tutorAI" ? " active" : "")} onClick={() => { setTutorFocusConcept(null); setScreen("tutorAI"); }}><MessageCircle size={17} />Tutor</button>
               <button className={"sidebar-navbtn" + (screen === "materiList" || screen === "materi" ? " active" : "")} onClick={() => setScreen("materiList")}><BookOpen size={17} />Materi</button>
@@ -1105,6 +1241,7 @@ function AppInner() {
             <nav className="floating-nav">
               <button className={"sidebar-navbtn" + (guruTab === "beranda" ? " active" : "")} onClick={() => setGuruTab("beranda")}><LayoutDashboard size={17} />Beranda</button>
               <button className={"sidebar-navbtn" + (guruTab === "analitik" ? " active" : "")} onClick={() => setGuruTab("analitik")}><TrendingUp size={17} />Analitik</button>
+              <button className={"sidebar-navbtn" + (guruTab === "ujian" ? " active" : "")} onClick={() => setGuruTab("ujian")}><Clock size={17} />Waktu</button>
               <button className={"sidebar-navbtn" + (guruTab === "materi" ? " active" : "")} onClick={() => setGuruTab("materi")}><Database size={17} />KB</button>
               <button className="sidebar-navbtn" onClick={logout}><LogOut size={17} />Keluar</button>
             </nav>
@@ -1357,8 +1494,30 @@ function AppInner() {
 
                 {progressLoaded && screen === "ujianSoal" && examQuestions.length > 0 && (
                   <div className="card">
-                    <div className="tag-eyebrow">Ujian · Soal {examCurrent + 1} dari {examQuestions.length}</div>
+                    <div className="tag-eyebrow">Ujian · Soal {examCurrent + 1} dari {examQuestions.length} · Terjawab: {examAnswers.filter((a) => a !== null && a !== undefined).length}/{examQuestions.length}</div>
                     <div className="bar-track" style={{ marginBottom: 14 }}><div className="bar-fill" style={{ width: `${((examCurrent + 1) / examQuestions.length) * 100}%` }} /></div>
+
+                    <div style={{ marginBottom: 16 }}>
+                      <div style={{ fontSize: 11.5, color: "var(--muted)", marginBottom: 7 }}>Lompat ke soal (nomor kecil = lebih mudah):</div>
+                      <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                        {examQuestions.map((_, i) => {
+                          const isCurrent = examCurrent === i;
+                          const isAnswered = examAnswers[i] !== null && examAnswers[i] !== undefined;
+                          return (
+                            <button key={i} onClick={() => jumpToExamQuestion(i)}
+                              style={{
+                                width: 30, height: 30, borderRadius: 9, fontSize: 12.5, fontWeight: 700,
+                                border: isCurrent ? "1.5px solid var(--brand)" : isAnswered ? "1.5px solid var(--teal)" : "1.5px solid var(--line)",
+                                background: isCurrent ? "var(--brand)" : isAnswered ? "var(--teal-light)" : "white",
+                                color: isCurrent ? "white" : isAnswered ? "#0F7A56" : "var(--ink)",
+                              }}>
+                              {i + 1}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+
                     <div className="qtext"><MathText text={examQuestions[examCurrent].text} /></div>
                     {examQuestions[examCurrent].options.map((opt, i) => (
                       <button key={i} className={"opt" + (examAnswers[examCurrent] === i ? " picked" : "")} onClick={() => selectExamAnswer(i)}><MathText text={opt.text} /></button>
@@ -1645,6 +1804,36 @@ function AppInner() {
                         </div>
                       );
                     })}
+                  </div>
+                )}
+
+                {guruTab === "ujian" && (
+                  <div className="card">
+                    <div className="tag-eyebrow">Waktu Pengerjaan Ujian Siswa</div>
+                    <p style={{ fontSize: 12.5, color: "var(--muted)", marginBottom: 14 }}>
+                      Data waktu pengerjaan hanya ditampilkan di laman guru dan tidak terlihat oleh siswa.
+                    </p>
+                    <div style={{ display: "flex", gap: 14, flexWrap: "wrap", marginBottom: 18 }}>
+                      <div className="card" style={{ flex: 1, minWidth: 140 }}><div style={{ fontSize: 11, color: "var(--muted)" }}>Total percobaan ujian</div><div className="disp" style={{ fontSize: 22 }}>{guruExamAttempts.length}</div></div>
+                      <div className="card" style={{ flex: 1, minWidth: 140 }}><div style={{ fontSize: 11, color: "var(--muted)" }}>Rata-rata waktu pengerjaan</div><div className="disp" style={{ fontSize: 18 }}>{formatDuration(guruAvgDurationSec)}</div></div>
+                    </div>
+                    {guruExamAttempts.length === 0 && <p style={{ fontSize: 13.5, color: "var(--muted)" }}>Belum ada siswa yang mengerjakan ujian.</p>}
+                    {guruExamAttempts.length > 0 && (
+                      <table>
+                        <thead><tr><th>Nama</th><th>Kelas</th><th>Tanggal</th><th>Skor</th><th>Waktu Pengerjaan</th></tr></thead>
+                        <tbody>
+                          {guruExamAttempts.map((h, i) => (
+                            <tr key={i}>
+                              <td>{h.student}</td>
+                              <td>{h.kelas || "-"}</td>
+                              <td>{new Date(h.date).toLocaleDateString("id-ID", { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" })}</td>
+                              <td>{h.correct}/{h.total} · {h.score}%</td>
+                              <td className="mono">{formatDuration(h.durationSec)}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    )}
                   </div>
                 )}
 
