@@ -628,6 +628,15 @@ function AppInner() {
     return pool[idx];
   }
 
+  function jumpToQuestion(idx) {
+    setPoolIndex((p) => ({ ...p, [activeConcept]: idx }));
+    setSelected(null);
+    setDiag(null);
+    setConsecWrong(0);
+    setHintTier(0);
+    setScreen("latihan");
+  }
+
   function submitAnswer() {
     const q = currentQ();
     const opt = q.options[selected];
@@ -648,12 +657,15 @@ function AppInner() {
   }
 
   function afterDiagnosisCorrectOrResolved() {
-    setPoolIndex((p) => ({ ...p, [activeConcept]: p[activeConcept] + 1 }));
+    // Tetap di materi (activeConcept) yang sama — lanjut ke soal berikutnya dalam pool yang sama,
+    // tidak lompat ke materi lain, supaya latihan terasa fokus per sub-materi.
+    const pool = PRACTICE_POOL[activeConcept] || [];
+    setPoolIndex((p) => ({ ...p, [activeConcept]: pool.length ? (p[activeConcept] + 1) % pool.length : 0 }));
     setSelected(null);
     setDiag(null);
     setConsecWrong(0);
     setHintTier(0);
-    goStudy();
+    setScreen("latihan");
   }
 
   function goToHint() {
@@ -1250,6 +1262,29 @@ function AppInner() {
                 {progressLoaded && screen === "latihan" && (
                   <div className="card">
                     <div className="tag-eyebrow">Latihan · {CONCEPTS[activeConcept].name} · Salah berturut-turut: {consecWrong}</div>
+
+                    {(PRACTICE_POOL[activeConcept] || []).length > 1 && (
+                      <div style={{ marginBottom: 16 }}>
+                        <div style={{ fontSize: 11.5, color: "var(--muted)", marginBottom: 7 }}>Lompat ke soal (nomor kecil = lebih mudah):</div>
+                        <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                          {PRACTICE_POOL[activeConcept].map((_, i) => {
+                            const isCurrent = (poolIndex[activeConcept] || 0) % PRACTICE_POOL[activeConcept].length === i;
+                            return (
+                              <button key={i} onClick={() => jumpToQuestion(i)}
+                                style={{
+                                  width: 30, height: 30, borderRadius: 9, fontSize: 12.5, fontWeight: 700,
+                                  border: isCurrent ? "1.5px solid var(--brand)" : "1.5px solid var(--line)",
+                                  background: isCurrent ? "var(--brand)" : "white",
+                                  color: isCurrent ? "white" : "var(--ink)",
+                                }}>
+                                {i + 1}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
+
                     <div className="qtext"><MathText text={currentQ().text} /></div>
                     {currentQ().options.map((opt, i) => (
                       <button key={i} className={"opt" + (selected === i ? " picked" : "")} onClick={() => setSelected(i)}><MathText text={opt.text} /></button>
