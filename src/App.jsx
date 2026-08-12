@@ -513,6 +513,7 @@ function AppInner() {
   const [guruStudents, setGuruStudents] = useState([]);
   const [guruKelasFilter, setGuruKelasFilter] = useState("semua");
   const [guruLoading, setGuruLoading] = useState(false);
+  const [guruSelectedAttempt, setGuruSelectedAttempt] = useState(null);
 
   useEffect(() => {
     const t = setTimeout(() => setAuthTimedOut(true), 12000);
@@ -851,6 +852,7 @@ function AppInner() {
     await signOut(auth);
     setScreen("dashboard");
     setGuruStudents([]);
+    setGuruSelectedAttempt(null);
   }
 
   function startEditProfil() {
@@ -1124,6 +1126,61 @@ function AppInner() {
         </div>
       )}
 
+      {profile?.role === "guru" && guruSelectedAttempt && (
+        <div style={{
+          position: "fixed", inset: 0, background: "rgba(30,27,51,0.72)", zIndex: 9998,
+          display: "flex", alignItems: "flex-start", justifyContent: "center", padding: "30px 16px", overflowY: "auto",
+        }} onClick={(e) => { if (e.target === e.currentTarget) setGuruSelectedAttempt(null); }}>
+          <div className="card" style={{ maxWidth: 640, width: "100%", margin: "0 auto" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10, marginBottom: 4 }}>
+              <div>
+                <div className="tag-eyebrow">Jawaban Ujian — {guruSelectedAttempt.student}</div>
+                <div style={{ fontSize: 12, color: "var(--muted)" }}>
+                  {guruSelectedAttempt.kelas ? `Kelas ${guruSelectedAttempt.kelas} · ` : ""}
+                  {new Date(guruSelectedAttempt.date).toLocaleDateString("id-ID", { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" })}
+                </div>
+              </div>
+              <button className="btn-ghost" style={{ padding: 7 }} onClick={() => setGuruSelectedAttempt(null)} title="Tutup">✕</button>
+            </div>
+
+            <div className="hero-card" style={{ margin: "14px 0 18px", textAlign: "center" }}>
+              <div style={{ fontSize: 12, opacity: 0.85, fontWeight: 700, letterSpacing: ".04em", textTransform: "uppercase" }}>Skor</div>
+              <div className="disp" style={{ fontSize: 34, margin: "6px 0" }}>{guruSelectedAttempt.score}</div>
+              <div style={{ fontSize: 13, opacity: 0.9 }}>
+                {guruSelectedAttempt.correct} dari {guruSelectedAttempt.total} soal benar · Waktu pengerjaan: {formatDuration(guruSelectedAttempt.durationSec)}
+              </div>
+            </div>
+
+            <div className="tag-eyebrow" style={{ marginBottom: 8 }}>Rincian Jawaban</div>
+            {guruSelectedAttempt.details.map((d, i) => (
+              <div key={i} style={{ marginBottom: 16, paddingBottom: 16, borderBottom: i < guruSelectedAttempt.details.length - 1 ? "1px solid var(--line)" : "none" }}>
+                <div style={{ fontSize: 11, color: "var(--muted)", marginBottom: 4 }} className="mono">Soal {i + 1} · {CONCEPTS[d.concept].name}</div>
+                <div style={{ fontSize: 15, marginBottom: 10 }}><MathText text={d.text} /></div>
+                {d.options.map((opt, oi) => {
+                  const isCorrectOpt = !!opt.correct;
+                  const isSelected = d.selected === oi;
+                  const style = isCorrectOpt
+                    ? { borderColor: "var(--teal)", background: "var(--teal-light)" }
+                    : isSelected
+                    ? { borderColor: "var(--rose)", background: "var(--rose-light)" }
+                    : {};
+                  return (
+                    <div key={oi} className="opt" style={{ ...style, cursor: "default", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
+                      <MathText text={opt.text} />
+                      {isCorrectOpt && <CheckCircle2 size={15} style={{ color: "var(--teal)", flexShrink: 0 }} />}
+                      {isSelected && !isCorrectOpt && <AlertTriangle size={15} style={{ color: "var(--rose)", flexShrink: 0 }} />}
+                    </div>
+                  );
+                })}
+                {(d.selected === null || d.selected === undefined) && <div style={{ fontSize: 12, color: "var(--rose)", marginTop: 2 }}>Tidak dijawab.</div>}
+              </div>
+            ))}
+
+            <button className="btn-primary" onClick={() => setGuruSelectedAttempt(null)}>Tutup</button>
+          </div>
+        </div>
+      )}
+
       {mode === "landing" && (
         <div className="body-area">
           <div className="hero-card" style={{ textAlign: "center" }}>
@@ -1209,7 +1266,7 @@ function AppInner() {
               <nav className="sidebar-nav">
                 <button className={"sidebar-navbtn" + (guruTab === "beranda" ? " active" : "")} onClick={() => setGuruTab("beranda")}><LayoutDashboard size={17} />Beranda</button>
                 <button className={"sidebar-navbtn" + (guruTab === "analitik" ? " active" : "")} onClick={() => setGuruTab("analitik")}><TrendingUp size={17} />Analitik</button>
-                <button className={"sidebar-navbtn" + (guruTab === "ujian" ? " active" : "")} onClick={() => setGuruTab("ujian")}><Clock size={17} />Waktu Ujian</button>
+                <button className={"sidebar-navbtn" + (guruTab === "ujian" ? " active" : "")} onClick={() => { setGuruTab("ujian"); setGuruSelectedAttempt(null); }}><Clock size={17} />Jawaban &amp; Waktu Ujian</button>
                 <button className={"sidebar-navbtn" + (guruTab === "materi" ? " active" : "")} onClick={() => setGuruTab("materi")}><Database size={17} />Knowledge Base</button>
               </nav>
             )}
@@ -1241,7 +1298,7 @@ function AppInner() {
             <nav className="floating-nav">
               <button className={"sidebar-navbtn" + (guruTab === "beranda" ? " active" : "")} onClick={() => setGuruTab("beranda")}><LayoutDashboard size={17} />Beranda</button>
               <button className={"sidebar-navbtn" + (guruTab === "analitik" ? " active" : "")} onClick={() => setGuruTab("analitik")}><TrendingUp size={17} />Analitik</button>
-              <button className={"sidebar-navbtn" + (guruTab === "ujian" ? " active" : "")} onClick={() => setGuruTab("ujian")}><Clock size={17} />Waktu</button>
+              <button className={"sidebar-navbtn" + (guruTab === "ujian" ? " active" : "")} onClick={() => { setGuruTab("ujian"); setGuruSelectedAttempt(null); }}><Clock size={17} />Jawaban</button>
               <button className={"sidebar-navbtn" + (guruTab === "materi" ? " active" : "")} onClick={() => setGuruTab("materi")}><Database size={17} />KB</button>
               <button className="sidebar-navbtn" onClick={logout}><LogOut size={17} />Keluar</button>
             </nav>
@@ -1809,9 +1866,9 @@ function AppInner() {
 
                 {guruTab === "ujian" && (
                   <div className="card">
-                    <div className="tag-eyebrow">Waktu Pengerjaan Ujian Siswa</div>
+                    <div className="tag-eyebrow">Jawaban &amp; Waktu Pengerjaan Ujian Siswa</div>
                     <p style={{ fontSize: 12.5, color: "var(--muted)", marginBottom: 14 }}>
-                      Data waktu pengerjaan hanya ditampilkan di laman guru dan tidak terlihat oleh siswa.
+                      Data waktu pengerjaan dan rincian jawaban hanya ditampilkan di laman guru dan tidak terlihat oleh siswa.
                     </p>
                     <div style={{ display: "flex", gap: 14, flexWrap: "wrap", marginBottom: 18 }}>
                       <div className="card" style={{ flex: 1, minWidth: 140 }}><div style={{ fontSize: 11, color: "var(--muted)" }}>Total percobaan ujian</div><div className="disp" style={{ fontSize: 22 }}>{guruExamAttempts.length}</div></div>
@@ -1820,7 +1877,7 @@ function AppInner() {
                     {guruExamAttempts.length === 0 && <p style={{ fontSize: 13.5, color: "var(--muted)" }}>Belum ada siswa yang mengerjakan ujian.</p>}
                     {guruExamAttempts.length > 0 && (
                       <table>
-                        <thead><tr><th>Nama</th><th>Kelas</th><th>Tanggal</th><th>Skor</th><th>Waktu Pengerjaan</th></tr></thead>
+                        <thead><tr><th>Nama</th><th>Kelas</th><th>Tanggal</th><th>Skor</th><th>Waktu Pengerjaan</th><th>Aksi</th></tr></thead>
                         <tbody>
                           {guruExamAttempts.map((h, i) => (
                             <tr key={i}>
@@ -1829,6 +1886,13 @@ function AppInner() {
                               <td>{new Date(h.date).toLocaleDateString("id-ID", { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" })}</td>
                               <td>{h.correct}/{h.total} · {h.score}%</td>
                               <td className="mono">{formatDuration(h.durationSec)}</td>
+                              <td>
+                                {h.details && h.details.length > 0 ? (
+                                  <button className="btn-ghost" style={{ padding: "5px 10px", fontSize: 11.5 }} onClick={() => setGuruSelectedAttempt(h)}>Lihat Jawaban</button>
+                                ) : (
+                                  <span style={{ fontSize: 11.5, color: "var(--muted)" }}>-</span>
+                                )}
+                              </td>
                             </tr>
                           ))}
                         </tbody>
