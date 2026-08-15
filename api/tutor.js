@@ -52,9 +52,12 @@ export default async function handler(req, res) {
     }],
   };
 
-  try {
-    const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key=${apiKey}`,
+  // Urutan model cadangan: kalau model pertama sibuk/gagal, otomatis coba model berikutnya.
+  const MODELS = ["gemini-flash-latest", "gemini-2.5-flash", "gemini-2.0-flash"];
+
+  async function callGemini(model) {
+    return fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -65,10 +68,49 @@ export default async function handler(req, res) {
         }),
       }
     );
+  }
 
-    if (!response.ok) {
-      const errText = await response.text();
-      res.status(response.status).json({ error: "Gagal menghubungi AI: " + errText.slice(0, 200) });
+  try {
+    let response = null;
+    let lastErrStatus = null;
+    let lastErrText = "";
+    let usedModel = null;
+
+    for (const model of MODELS) {
+      try {
+        response = await callGemini(model);
+      } catch (e) {
+        continue; // gagal koneksi ke model ini -> langsung coba model berikutnya
+      }
+      if (response.ok) { usedModel = model; break; }
+
+      lastErrStatus = response.status;
+      // Kalau model sedang sibuk/limit, kasih satu kali kesempatan retry cepat pada model YANG SAMA
+      // sebelum pindah ke model cadangan berikutnya (kadang cukup untuk lolos).
+      if (response.status === 503 || response.status === 429) {
+        await new Promise((r) => setTimeout(r, 600));
+        try {
+          response = await callGemini(model);
+          if (response.ok) { usedModel = model; break; }
+          lastErrStatus = response.status;
+        } catch (e) {}
+      }
+      lastErrText = await response.text().catch(() => "");
+      // lanjut coba model cadangan berikutnya
+    }
+
+    if (!usedModel) {
+      if (lastErrStatus === 503) {
+        res.status(200).json({ reply: "Maaf, semua server AI sedang sibuk banget nih (lagi banyak yang pakai). Coba tanya lagi sebentar lagi ya 🙏" });
+        return;
+      }
+      if (lastErrStatus === 429) {
+        res.status(200).json({ reply: "Wah, kuota AI Tutor untuk saat ini sudah penuh. Coba lagi beberapa saat lagi ya." });
+        return;
+      }
+      res.status(200).json({ reply: "Maaf, ada gangguan saat menghubungi AI. Coba tanya lagi ya. (kode: " + lastErrStatus + ")" });
+      // eslint-disable-next-line no-console
+      console.error("Gemini error semua model:", lastErrStatus, lastErrText.slice(0, 300));
       return;
     }
 
@@ -76,6 +118,6 @@ export default async function handler(req, res) {
     const text = data?.candidates?.[0]?.content?.parts?.map((p) => p.text || "").join("\n").trim();
     res.status(200).json({ reply: text || "Maaf, aku belum bisa menjawab itu. Coba tanya dengan cara lain ya." });
   } catch (e) {
-    res.status(500).json({ error: "Terjadi kesalahan menghubungi server AI." });
+    res.status(200).json({ reply: "Maaf, koneksi ke AI Tutor sedang bermasalah. Coba lagi sebentar ya." });
   }
 }

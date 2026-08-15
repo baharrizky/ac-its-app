@@ -461,6 +461,7 @@ function AppInner() {
   const [authName, setAuthName] = useState("");
   const [authKelas, setAuthKelas] = useState("");
   const [authSekolah, setAuthSekolah] = useState("");
+  const [authKelasAjar, setAuthKelasAjar] = useState("");
   const [authEmail, setAuthEmail] = useState("");
   const [authPassword, setAuthPassword] = useState("");
   const [authPassword2, setAuthPassword2] = useState("");
@@ -484,6 +485,8 @@ function AppInner() {
   const tutorGreetedRef = useRef(false);
   const [editName, setEditName] = useState("");
   const [editKelas, setEditKelas] = useState("");
+  const [editSekolah, setEditSekolah] = useState("");
+  const [editKelasAjar, setEditKelasAjar] = useState("");
   const [editAvatarColor, setEditAvatarColor] = useState(0);
   const [savingProfil, setSavingProfil] = useState(false);
 
@@ -858,6 +861,8 @@ function AppInner() {
   function startEditProfil() {
     setEditName(profile.name || "");
     setEditKelas(profile.kelas || "");
+    setEditSekolah(profile.sekolah || "");
+    setEditKelasAjar((profile.kelasAjar || []).join(", "));
     setEditAvatarColor(profile.avatarColor || 0);
     setEditingProfil(true);
   }
@@ -868,6 +873,10 @@ function AppInner() {
     try {
       const updates = { name: editName.trim(), avatarColor: editAvatarColor };
       if (profile.role === "siswa") updates.kelas = editKelas.trim();
+      if (profile.role === "guru") {
+        updates.sekolah = editSekolah.trim();
+        updates.kelasAjar = editKelasAjar.split(",").map((k) => k.trim()).filter(Boolean);
+      }
       await setDoc(doc(db, "users", authUser.uid), updates, { merge: true });
       setProfile((p) => ({ ...p, ...updates }));
       setEditingProfil(false);
@@ -937,7 +946,8 @@ function AppInner() {
     setAuthError("");
     const missingBase = !authEmail.trim() || !authPassword.trim() || (authTab === "daftar" && !authName.trim());
     const missingSiswaFields = authTab === "daftar" && authRole === "siswa" && (!authKelas.trim() || !authSekolah.trim());
-    if (missingBase || missingSiswaFields) {
+    const missingGuruFields = authTab === "daftar" && authRole === "guru" && !authSekolah.trim();
+    if (missingBase || missingSiswaFields || missingGuruFields) {
       setAuthError("Lengkapi semua kolom terlebih dahulu.");
       return;
     }
@@ -952,6 +962,10 @@ function AppInner() {
         const uid = cred.user.uid;
         const profileData = { name: authName.trim(), role: authRole, email: authEmail.trim() };
         if (authRole === "siswa") { profileData.kelas = authKelas.trim(); profileData.sekolah = authSekolah.trim(); }
+        if (authRole === "guru") {
+          profileData.sekolah = authSekolah.trim();
+          profileData.kelasAjar = authKelasAjar.split(",").map((k) => k.trim()).filter(Boolean);
+        }
         await setDoc(doc(db, "users", uid), profileData);
         if (authRole === "siswa") {
           await setDoc(doc(db, "progress", uid), { attempts: EMPTY_ATTEMPTS, misconceptions: [], poolIndex: EMPTY_POOLIDX });
@@ -977,10 +991,18 @@ function AppInner() {
   async function loadGuruData() {
     setGuruLoading(true);
     try {
-      const usersSnap = await getDocs(query(collection(db, "users"), where("role", "==", "siswa")));
+      const guruSekolah = (profile?.sekolah || "").trim();
+      const guruKelasAjar = profile?.kelasAjar || [];
+      if (!guruSekolah) {
+        setGuruStudents([]);
+        setGuruLoading(false);
+        return;
+      }
+      const usersSnap = await getDocs(query(collection(db, "users"), where("role", "==", "siswa"), where("sekolah", "==", guruSekolah)));
       const list = [];
       for (const uDoc of usersSnap.docs) {
         const u = uDoc.data();
+        if (guruKelasAjar.length > 0 && !guruKelasAjar.includes(u.kelas)) continue;
         const progSnap = await getDoc(doc(db, "progress", uDoc.id));
         const prog = progSnap.exists() ? progSnap.data() : { attempts: EMPTY_ATTEMPTS, misconceptions: [], examHistory: [] };
         list.push({ uid: uDoc.id, name: u.name || "Siswa", kelas: u.kelas, sekolah: u.sekolah, attempts: prog.attempts || EMPTY_ATTEMPTS, misconceptions: prog.misconceptions || [], examHistory: prog.examHistory || [] });
@@ -1227,6 +1249,13 @@ function AppInner() {
                     <div style={{ marginBottom: 10 }}><input type="text" placeholder="Asal sekolah" value={authSekolah} onChange={(e) => setAuthSekolah(e.target.value)} /></div>
                   </>
                 )}
+                {authRole === "guru" && (
+                  <>
+                    <div style={{ marginBottom: 10 }}><input type="text" placeholder="Asal sekolah tempat mengajar" value={authSekolah} onChange={(e) => setAuthSekolah(e.target.value)} /></div>
+                    <div style={{ marginBottom: 4 }}><input type="text" placeholder="Kelas yang diajar, pisahkan koma (contoh: X-A, X-B)" value={authKelasAjar} onChange={(e) => setAuthKelasAjar(e.target.value)} /></div>
+                    <div style={{ fontSize: 11.5, color: "var(--muted)", marginBottom: 10 }}>Kosongkan jika ingin melihat semua kelas di sekolah ini.</div>
+                  </>
+                )}
               </>
             )}
 
@@ -1264,10 +1293,11 @@ function AppInner() {
 
             {profile.role === "guru" && (
               <nav className="sidebar-nav">
-                <button className={"sidebar-navbtn" + (guruTab === "beranda" ? " active" : "")} onClick={() => setGuruTab("beranda")}><LayoutDashboard size={17} />Beranda</button>
-                <button className={"sidebar-navbtn" + (guruTab === "analitik" ? " active" : "")} onClick={() => setGuruTab("analitik")}><TrendingUp size={17} />Analitik</button>
-                <button className={"sidebar-navbtn" + (guruTab === "ujian" ? " active" : "")} onClick={() => { setGuruTab("ujian"); setGuruSelectedAttempt(null); }}><Clock size={17} />Jawaban &amp; Waktu Ujian</button>
-                <button className={"sidebar-navbtn" + (guruTab === "materi" ? " active" : "")} onClick={() => setGuruTab("materi")}><Database size={17} />Knowledge Base</button>
+                <button className={"sidebar-navbtn" + (guruTab === "beranda" && screen !== "profil" ? " active" : "")} onClick={() => { setGuruTab("beranda"); setScreen("dashboard"); }}><LayoutDashboard size={17} />Beranda</button>
+                <button className={"sidebar-navbtn" + (guruTab === "analitik" && screen !== "profil" ? " active" : "")} onClick={() => { setGuruTab("analitik"); setScreen("dashboard"); }}><TrendingUp size={17} />Analitik</button>
+                <button className={"sidebar-navbtn" + (guruTab === "ujian" && screen !== "profil" ? " active" : "")} onClick={() => { setGuruTab("ujian"); setGuruSelectedAttempt(null); setScreen("dashboard"); }}><Clock size={17} />Jawaban &amp; Waktu Ujian</button>
+                <button className={"sidebar-navbtn" + (guruTab === "materi" && screen !== "profil" ? " active" : "")} onClick={() => { setGuruTab("materi"); setScreen("dashboard"); }}><Database size={17} />Knowledge Base</button>
+                <button className={"sidebar-navbtn" + (screen === "profil" ? " active" : "")} onClick={() => { setScreen("profil"); startEditProfil(); }}><User size={17} />Profil</button>
               </nav>
             )}
 
@@ -1296,10 +1326,11 @@ function AppInner() {
           )}
           {profile.role === "guru" && (
             <nav className="floating-nav">
-              <button className={"sidebar-navbtn" + (guruTab === "beranda" ? " active" : "")} onClick={() => setGuruTab("beranda")}><LayoutDashboard size={17} />Beranda</button>
-              <button className={"sidebar-navbtn" + (guruTab === "analitik" ? " active" : "")} onClick={() => setGuruTab("analitik")}><TrendingUp size={17} />Analitik</button>
-              <button className={"sidebar-navbtn" + (guruTab === "ujian" ? " active" : "")} onClick={() => { setGuruTab("ujian"); setGuruSelectedAttempt(null); }}><Clock size={17} />Jawaban</button>
-              <button className={"sidebar-navbtn" + (guruTab === "materi" ? " active" : "")} onClick={() => setGuruTab("materi")}><Database size={17} />KB</button>
+              <button className={"sidebar-navbtn" + (guruTab === "beranda" && screen !== "profil" ? " active" : "")} onClick={() => { setGuruTab("beranda"); setScreen("dashboard"); }}><LayoutDashboard size={17} />Beranda</button>
+              <button className={"sidebar-navbtn" + (guruTab === "analitik" && screen !== "profil" ? " active" : "")} onClick={() => { setGuruTab("analitik"); setScreen("dashboard"); }}><TrendingUp size={17} />Analitik</button>
+              <button className={"sidebar-navbtn" + (guruTab === "ujian" && screen !== "profil" ? " active" : "")} onClick={() => { setGuruTab("ujian"); setGuruSelectedAttempt(null); setScreen("dashboard"); }}><Clock size={17} />Jawaban</button>
+              <button className={"sidebar-navbtn" + (guruTab === "materi" && screen !== "profil" ? " active" : "")} onClick={() => { setGuruTab("materi"); setScreen("dashboard"); }}><Database size={17} />KB</button>
+              <button className={"sidebar-navbtn" + (screen === "profil" ? " active" : "")} onClick={() => { setScreen("profil"); startEditProfil(); }}><User size={17} />Profil</button>
               <button className="sidebar-navbtn" onClick={logout}><LogOut size={17} />Keluar</button>
             </nav>
           )}
@@ -1752,6 +1783,20 @@ function AppInner() {
                       </div>
                     )}
 
+                    {profile.role === "guru" && (
+                      <>
+                        <div style={{ marginBottom: 12 }}>
+                          <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 5, fontWeight: 600 }}>Asal Sekolah</div>
+                          <input type="text" value={editSekolah} onChange={(e) => setEditSekolah(e.target.value)} placeholder="contoh: SMA Negeri 1" />
+                        </div>
+                        <div style={{ marginBottom: 16 }}>
+                          <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 5, fontWeight: 600 }}>Kelas yang Diajar</div>
+                          <input type="text" value={editKelasAjar} onChange={(e) => setEditKelasAjar(e.target.value)} placeholder="pisahkan koma, contoh: X-A, X-B" />
+                          <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 4 }}>Kosongkan untuk melihat semua kelas di sekolah ini.</div>
+                        </div>
+                      </>
+                    )}
+
                     <div style={{ display: "flex", gap: 10 }}>
                       <button className="btn-ghost" onClick={() => setEditingProfil(false)}>Batal</button>
                       <button className="btn-primary" disabled={!editName.trim() || savingProfil} onClick={saveProfil}>
@@ -1765,6 +1810,52 @@ function AppInner() {
 
             {profile.role === "guru" && (
               <div className="body-area">
+                {screen === "profil" ? (
+                  <div className="card" style={{ maxWidth: 420 }}>
+                    <div className="tag-eyebrow">Profil Guru</div>
+                    <div style={{ marginBottom: 14, textAlign: "center" }}>
+                      <div className="avatar avatar-lg" style={{ margin: "0 auto 10px", background: AVATAR_GRADIENTS[editAvatarColor] }}>{(editName || profile.name || "?").trim().charAt(0).toUpperCase()}</div>
+                      <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 8, fontWeight: 600 }}>Pilih warna avatar</div>
+                      <div style={{ display: "flex", gap: 8, justifyContent: "center" }}>
+                        {AVATAR_GRADIENTS.map((g, i) => (
+                          <button key={i} className={"avatar-btn" + (editAvatarColor === i ? " picked" : "")} onClick={() => setEditAvatarColor(i)}
+                            style={{ width: 30, height: 30, borderRadius: "50%", background: g, padding: 0 }} />
+                        ))}
+                      </div>
+                    </div>
+                    <div style={{ marginBottom: 10 }}>
+                      <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 5, fontWeight: 600 }}>Nama Lengkap</div>
+                      <input type="text" value={editName} onChange={(e) => setEditName(e.target.value)} />
+                    </div>
+                    <div style={{ marginBottom: 12 }}>
+                      <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 5, fontWeight: 600 }}>Asal Sekolah</div>
+                      <input type="text" value={editSekolah} onChange={(e) => setEditSekolah(e.target.value)} placeholder="contoh: SMA Negeri 1" />
+                    </div>
+                    <div style={{ marginBottom: 16 }}>
+                      <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 5, fontWeight: 600 }}>Kelas yang Diajar</div>
+                      <input type="text" value={editKelasAjar} onChange={(e) => setEditKelasAjar(e.target.value)} placeholder="pisahkan koma, contoh: X-A, X-B" />
+                      <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 4 }}>Kosongkan untuk melihat semua kelas di sekolah ini.</div>
+                    </div>
+                    <button className="btn-primary" style={{ width: "100%", justifyContent: "center" }} disabled={!editName.trim() || savingProfil} onClick={saveProfil}>
+                      {savingProfil ? <Loader2 size={15} className="spin" /> : "Simpan Perubahan"}
+                    </button>
+                  </div>
+                ) : (
+                  <>
+                {!profile.sekolah && (
+                  <div className="card" style={{ marginBottom: 16, borderColor: "var(--amber)" }}>
+                    <div style={{ display: "flex", alignItems: "flex-start", gap: 10 }}>
+                      <AlertTriangle size={18} style={{ color: "var(--amber)", flexShrink: 0, marginTop: 2 }} />
+                      <div>
+                        <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 3 }}>Lengkapi data sekolah kamu</div>
+                        <p style={{ fontSize: 12.5, color: "var(--muted)", marginBottom: 10 }}>
+                          Isi asal sekolah (dan kelas yang diajar, opsional) supaya kamu hanya melihat data siswa dari sekolah dan kelas yang kamu ajar.
+                        </p>
+                        <button className="btn-primary" style={{ padding: "7px 14px", fontSize: 12.5 }} onClick={() => { setScreen("profil"); startEditProfil(); }}>Lengkapi Sekarang</button>
+                      </div>
+                    </div>
+                  </div>
+                )}
                 <div style={{ marginBottom: 16, display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10 }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                     <span style={{ fontSize: 12.5, color: "var(--muted)", fontWeight: 600 }}>Kelas:</span>
@@ -1909,6 +2000,8 @@ function AppInner() {
                       <tbody>{KB_ROWS.map((r) => (<tr key={r.id}><td className="mono">{r.id}</td><td>{r.nama}</td><td><MathText text={r.deskripsi} /></td><td className="mono">{r.prereq}</td><td>{r.status}</td></tr>))}</tbody>
                     </table>
                   </div>
+                )}
+                  </>
                 )}
               </div>
             )}
