@@ -16,7 +16,7 @@ import {
   onAuthStateChanged, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut,
 } from "firebase/auth";
 import {
-  doc, getDoc, setDoc, collection, query, where, getDocs,
+  doc, getDoc, setDoc, updateDoc, collection, query, where, getDocs, arrayUnion, serverTimestamp,
 } from "firebase/firestore";
 
 // ---------------- DATA: Peta konsep (sesuai Knowledge Base) ----------------
@@ -462,6 +462,7 @@ function AppInner() {
   const [authKelas, setAuthKelas] = useState("");
   const [authSekolah, setAuthSekolah] = useState("");
   const [authKelasAjar, setAuthKelasAjar] = useState("");
+  const [authKodeAkses, setAuthKodeAkses] = useState("");
   const [authEmail, setAuthEmail] = useState("");
   const [authPassword, setAuthPassword] = useState("");
   const [authPassword2, setAuthPassword2] = useState("");
@@ -517,6 +518,15 @@ function AppInner() {
   const [guruKelasFilter, setGuruKelasFilter] = useState("semua");
   const [guruLoading, setGuruLoading] = useState(false);
   const [guruSelectedAttempt, setGuruSelectedAttempt] = useState(null);
+
+  // ---------- Admin: Kode Akses Guru ----------
+  const [accessCodes, setAccessCodes] = useState([]);
+  const [codesLoading, setCodesLoading] = useState(false);
+  const [newKodeSekolah, setNewKodeSekolah] = useState("");
+  const [newKodeMapelNama, setNewKodeMapelNama] = useState("");
+  const [newKodeMapelSingkat, setNewKodeMapelSingkat] = useState("");
+  const [newKodeNomor, setNewKodeNomor] = useState("");
+  const [kodeError, setKodeError] = useState("");
 
   useEffect(() => {
     const t = setTimeout(() => setAuthTimedOut(true), 12000);
@@ -946,7 +956,7 @@ function AppInner() {
     setAuthError("");
     const missingBase = !authEmail.trim() || !authPassword.trim() || (authTab === "daftar" && !authName.trim());
     const missingSiswaFields = authTab === "daftar" && authRole === "siswa" && (!authKelas.trim() || !authSekolah.trim());
-    const missingGuruFields = authTab === "daftar" && authRole === "guru" && !authSekolah.trim();
+    const missingGuruFields = authTab === "daftar" && authRole === "guru" && !authKodeAkses.trim();
     if (missingBase || missingSiswaFields || missingGuruFields) {
       setAuthError("Lengkapi semua kolom terlebih dahulu.");
       return;
@@ -957,18 +967,44 @@ function AppInner() {
     }
     setAuthSubmitting(true);
     try {
+      let kodeData = null;
+      let kodeNormalized = "";
+      if (authTab === "daftar" && authRole === "guru") {
+        // Validasi kode akses sekolah SEBELUM membuat akun, supaya guru
+        // tanpa kode yang benar tidak bisa mendaftar & tidak ada akun "yatim".
+        kodeNormalized = authKodeAkses.trim().toUpperCase();
+        const codeSnap = await getDoc(doc(db, "accessCodes", kodeNormalized));
+        if (!codeSnap.exists()) {
+          setAuthError("Kode akses tidak ditemukan. Periksa kembali kode dari admin sekolah kamu.");
+          setAuthSubmitting(false);
+          return;
+        }
+        kodeData = codeSnap.data();
+        if (kodeData.active === false) {
+          setAuthError("Kode akses ini sudah tidak aktif. Hubungi admin sekolah kamu.");
+          setAuthSubmitting(false);
+          return;
+        }
+      }
       if (authTab === "daftar") {
         const cred = await createUserWithEmailAndPassword(auth, authEmail.trim(), authPassword);
         const uid = cred.user.uid;
         const profileData = { name: authName.trim(), role: authRole, email: authEmail.trim() };
         if (authRole === "siswa") { profileData.kelas = authKelas.trim(); profileData.sekolah = authSekolah.trim(); }
         if (authRole === "guru") {
-          profileData.sekolah = authSekolah.trim();
+          // Sekolah & mata pelajaran diambil dari kode akses (bukan diketik bebas),
+          // supaya guru hanya bisa terdaftar pada sekolah & mapel sesuai kodenya.
+          profileData.sekolah = kodeData.sekolah;
+          profileData.mapel = kodeData.mapel;
+          profileData.kodeAkses = kodeNormalized;
           profileData.kelasAjar = authKelasAjar.split(",").map((k) => k.trim()).filter(Boolean);
         }
         await setDoc(doc(db, "users", uid), profileData);
         if (authRole === "siswa") {
           await setDoc(doc(db, "progress", uid), { attempts: EMPTY_ATTEMPTS, misconceptions: [], poolIndex: EMPTY_POOLIDX });
+        }
+        if (authRole === "guru") {
+          await updateDoc(doc(db, "accessCodes", kodeNormalized), { usedBy: arrayUnion(uid) });
         }
       } else {
         await signInWithEmailAndPassword(auth, authEmail.trim(), authPassword);
@@ -1016,6 +1052,61 @@ function AppInner() {
     if (mode === "app" && profile?.role === "guru") loadGuruData();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mode, profile]);
+
+  async function loadAccessCodes() {
+    setCodesLoading(true);
+    try {
+      const snap = await getDocs(collection(db, "accessCodes"));
+      const list = snap.docs.map((d) => ({ code: d.id, ...d.data() }));
+      list.sort((a, b) => a.code.localeCompare(b.code));
+      setAccessCodes(list);
+    } catch (e) {}
+    setCodesLoading(false);
+  }
+
+  useEffect(() => {
+    if (mode === "app" && profile?.role === "guru" && profile?.isAdmin && guruTab === "kodeAkses") loadAccessCodes();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mode, profile, guruTab]);
+
+  async function createAccessCode() {
+    setKodeError("");
+    const sekolahSlug = newKodeSekolah.trim().toUpperCase().replace(/\s+/g, "");
+    const mapelSlug = newKodeMapelSingkat.trim().toUpperCase().replace(/\s+/g, "");
+    const nomor = newKodeNomor.trim();
+    if (!sekolahSlug || !mapelSlug || !nomor || !newKodeMapelNama.trim()) {
+      setKodeError("Lengkapi semua kolom terlebih dahulu.");
+      return;
+    }
+    const code = `${sekolahSlug}-${mapelSlug}-${nomor}`;
+    try {
+      const existing = await getDoc(doc(db, "accessCodes", code));
+      if (existing.exists()) {
+        setKodeError("Kode ini sudah ada. Gunakan nomor kode yang berbeda.");
+        return;
+      }
+      await setDoc(doc(db, "accessCodes", code), {
+        sekolah: newKodeSekolah.trim(),
+        mapel: newKodeMapelNama.trim(),
+        mapelSingkat: mapelSlug,
+        kodeMapel: nomor,
+        active: true,
+        createdAt: serverTimestamp(),
+        usedBy: [],
+      });
+      setNewKodeSekolah(""); setNewKodeMapelNama(""); setNewKodeMapelSingkat(""); setNewKodeNomor("");
+      loadAccessCodes();
+    } catch (e) {
+      setKodeError("Gagal membuat kode akses. Coba lagi.");
+    }
+  }
+
+  async function toggleAccessCode(code, currentActive) {
+    try {
+      await updateDoc(doc(db, "accessCodes", code), { active: !currentActive });
+      loadAccessCodes();
+    } catch (e) {}
+  }
 
   useEffect(() => {
     if (mode === "app" && profile?.role === "siswa" && screen === "leaderboard") loadLeaderboard();
@@ -1251,7 +1342,18 @@ function AppInner() {
                 )}
                 {authRole === "guru" && (
                   <>
-                    <div style={{ marginBottom: 10 }}><input type="text" placeholder="Asal sekolah tempat mengajar" value={authSekolah} onChange={(e) => setAuthSekolah(e.target.value)} /></div>
+                    <div style={{ marginBottom: 10 }}>
+                      <input
+                        type="text"
+                        placeholder="Kode akses (contoh: SMAN5-MAT-003)"
+                        value={authKodeAkses}
+                        onChange={(e) => setAuthKodeAkses(e.target.value.toUpperCase())}
+                        style={{ textTransform: "uppercase" }}
+                      />
+                    </div>
+                    <div style={{ fontSize: 11.5, color: "var(--muted)", marginBottom: 10 }}>
+                      Kode akses didapat dari admin sekolah kamu. Kode ini menentukan sekolah &amp; mata pelajaran akunmu secara otomatis.
+                    </div>
                     <div style={{ marginBottom: 4 }}><input type="text" placeholder="Kelas yang diajar, pisahkan koma (contoh: X-A, X-B)" value={authKelasAjar} onChange={(e) => setAuthKelasAjar(e.target.value)} /></div>
                     <div style={{ fontSize: 11.5, color: "var(--muted)", marginBottom: 10 }}>Kosongkan jika ingin melihat semua kelas di sekolah ini.</div>
                   </>
@@ -1297,6 +1399,9 @@ function AppInner() {
                 <button className={"sidebar-navbtn" + (guruTab === "analitik" && screen !== "profil" ? " active" : "")} onClick={() => { setGuruTab("analitik"); setScreen("dashboard"); }}><TrendingUp size={17} />Analitik</button>
                 <button className={"sidebar-navbtn" + (guruTab === "ujian" && screen !== "profil" ? " active" : "")} onClick={() => { setGuruTab("ujian"); setGuruSelectedAttempt(null); setScreen("dashboard"); }}><Clock size={17} />Jawaban &amp; Waktu Ujian</button>
                 <button className={"sidebar-navbtn" + (guruTab === "materi" && screen !== "profil" ? " active" : "")} onClick={() => { setGuruTab("materi"); setScreen("dashboard"); }}><Database size={17} />Knowledge Base</button>
+                {profile.isAdmin && (
+                  <button className={"sidebar-navbtn" + (guruTab === "kodeAkses" && screen !== "profil" ? " active" : "")} onClick={() => { setGuruTab("kodeAkses"); setScreen("dashboard"); }}><LockIcon size={17} />Kode Akses</button>
+                )}
                 <button className={"sidebar-navbtn" + (screen === "profil" ? " active" : "")} onClick={() => { setScreen("profil"); startEditProfil(); }}><User size={17} />Profil</button>
               </nav>
             )}
@@ -1330,6 +1435,9 @@ function AppInner() {
               <button className={"sidebar-navbtn" + (guruTab === "analitik" && screen !== "profil" ? " active" : "")} onClick={() => { setGuruTab("analitik"); setScreen("dashboard"); }}><TrendingUp size={17} />Analitik</button>
               <button className={"sidebar-navbtn" + (guruTab === "ujian" && screen !== "profil" ? " active" : "")} onClick={() => { setGuruTab("ujian"); setGuruSelectedAttempt(null); setScreen("dashboard"); }}><Clock size={17} />Jawaban</button>
               <button className={"sidebar-navbtn" + (guruTab === "materi" && screen !== "profil" ? " active" : "")} onClick={() => { setGuruTab("materi"); setScreen("dashboard"); }}><Database size={17} />KB</button>
+              {profile.isAdmin && (
+                <button className={"sidebar-navbtn" + (guruTab === "kodeAkses" && screen !== "profil" ? " active" : "")} onClick={() => { setGuruTab("kodeAkses"); setScreen("dashboard"); }}><LockIcon size={17} />Kode Akses</button>
+              )}
               <button className={"sidebar-navbtn" + (screen === "profil" ? " active" : "")} onClick={() => { setScreen("profil"); startEditProfil(); }}><User size={17} />Profil</button>
               <button className="sidebar-navbtn" onClick={logout}><LogOut size={17} />Keluar</button>
             </nav>
@@ -1726,6 +1834,7 @@ function AppInner() {
                     <div style={{ display: "flex", gap: 8, justifyContent: "center", margin: "8px 0 14px", flexWrap: "wrap" }}>
                       {profile.kelas && <span className="pill" style={{ background: "var(--brand-light)", color: "var(--brand-dark)" }}>Kelas {profile.kelas}</span>}
                       {profile.sekolah && <span className="pill" style={{ background: "var(--paper-2)", color: "var(--muted)" }}>{profile.sekolah}</span>}
+                      {profile.mapel && <span className="pill" style={{ background: "var(--paper-2)", color: "var(--muted)" }}>{profile.mapel}</span>}
                     </div>
                     <div style={{ display: "flex", gap: 8, justifyContent: "center", marginBottom: 16, flexWrap: "wrap" }}>
                       <span className="streak-chip">🔥 Streak {streak} hari</span>
@@ -1999,6 +2108,57 @@ function AppInner() {
                       <thead><tr><th>ID</th><th>Nama konsep</th><th>Deskripsi</th><th>Prasyarat</th><th>Status</th></tr></thead>
                       <tbody>{KB_ROWS.map((r) => (<tr key={r.id}><td className="mono">{r.id}</td><td>{r.nama}</td><td><MathText text={r.deskripsi} /></td><td className="mono">{r.prereq}</td><td>{r.status}</td></tr>))}</tbody>
                     </table>
+                  </div>
+                )}
+
+                {guruTab === "kodeAkses" && profile.isAdmin && (
+                  <div className="card">
+                    <div className="tag-eyebrow">Buat kode akses guru baru</div>
+                    <p style={{ fontSize: 12.5, color: "var(--muted)", marginBottom: 12 }}>
+                      Kode dipakai guru saat mendaftar, formatnya <span className="mono">SEKOLAH-MAPEL-NOMOR</span> (contoh: <span className="mono">SMAN5-MAT-003</span>). Sekolah &amp; mata pelajaran pada akun guru akan otomatis mengikuti kode ini.
+                    </p>
+                    {kodeError && <div className="err-box"><AlertTriangle size={14} style={{ verticalAlign: -2 }} /> {kodeError}</div>}
+                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 8 }}>
+                      <input type="text" placeholder="Nama sekolah (contoh: SMAN 5)" value={newKodeSekolah} onChange={(e) => setNewKodeSekolah(e.target.value)} style={{ flex: "1 1 200px" }} />
+                      <input type="text" placeholder="Nama mata pelajaran (contoh: Matematika)" value={newKodeMapelNama} onChange={(e) => setNewKodeMapelNama(e.target.value)} style={{ flex: "1 1 200px" }} />
+                    </div>
+                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 8 }}>
+                      <input type="text" placeholder="Singkatan mapel (contoh: Mat)" value={newKodeMapelSingkat} onChange={(e) => setNewKodeMapelSingkat(e.target.value)} style={{ flex: "1 1 160px" }} />
+                      <input type="text" placeholder="Nomor kode (contoh: 003)" value={newKodeNomor} onChange={(e) => setNewKodeNomor(e.target.value)} style={{ flex: "1 1 160px" }} />
+                    </div>
+                    {(newKodeSekolah.trim() || newKodeMapelSingkat.trim() || newKodeNomor.trim()) && (
+                      <div style={{ fontSize: 13, marginBottom: 12 }}>
+                        Pratinjau kode: <span className="mono" style={{ fontWeight: 700 }}>
+                          {newKodeSekolah.trim().toUpperCase().replace(/\s+/g, "") || "SEKOLAH"}-{newKodeMapelSingkat.trim().toUpperCase().replace(/\s+/g, "") || "MAPEL"}-{newKodeNomor.trim() || "NOMOR"}
+                        </span>
+                      </div>
+                    )}
+                    <button className="btn-primary" onClick={createAccessCode}>Buat Kode Akses</button>
+
+                    <div className="tag-eyebrow" style={{ marginTop: 24 }}>Daftar kode akses</div>
+                    {codesLoading && <p style={{ fontSize: 13.5, color: "var(--muted)" }}>Memuat...</p>}
+                    {!codesLoading && accessCodes.length === 0 && <p style={{ fontSize: 13.5, color: "var(--muted)" }}>Belum ada kode akses dibuat.</p>}
+                    {accessCodes.length > 0 && (
+                      <table>
+                        <thead><tr><th>Kode</th><th>Sekolah</th><th>Mapel</th><th>Guru terdaftar</th><th>Status</th><th></th></tr></thead>
+                        <tbody>
+                          {accessCodes.map((c) => (
+                            <tr key={c.code}>
+                              <td className="mono">{c.code}</td>
+                              <td>{c.sekolah}</td>
+                              <td>{c.mapel}</td>
+                              <td>{(c.usedBy || []).length}</td>
+                              <td>{c.active === false ? "Nonaktif" : "Aktif"}</td>
+                              <td>
+                                <button className="btn-ghost" style={{ padding: "4px 10px", fontSize: 11.5 }} onClick={() => toggleAccessCode(c.code, c.active !== false)}>
+                                  {c.active === false ? "Aktifkan" : "Nonaktifkan"}
+                                </button>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    )}
                   </div>
                 )}
                   </>
