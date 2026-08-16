@@ -1345,7 +1345,7 @@ function AppInner() {
                     <div style={{ marginBottom: 10 }}>
                       <input
                         type="text"
-                        placeholder="Kode akses (contoh: SMAN5-MAT-003)"
+                        placeholder="Kode akses (contoh: SMAN10-BINGG-123)"
                         value={authKodeAkses}
                         onChange={(e) => setAuthKodeAkses(e.target.value.toUpperCase())}
                         style={{ textTransform: "uppercase" }}
