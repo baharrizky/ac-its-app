@@ -31,7 +31,7 @@ const CONCEPTS = {
   E7:  { name: "Eksponen Negatif",              short: "a⁻ⁿ",       prereq: ["E3", "E6"] },
   E8:  { name: "Pangkat Pecahan & Bentuk Akar", short: "a^(m/n)",   prereq: ["E1", "E4"] },
   E9:  { name: "Operasi Aljabar Bentuk Akar",   short: "√a ± √b",   prereq: ["E8"] },
-  E10: { name: "Fungsi & Model Eksponensial",   short: "y=a·bˣ",    prereq: ["E1", "E2"] },
+  E10: { name: "Pertumbuhan & Peluruhan Eksponensial", short: "Nₜ=N₀(1±p)ᵗ", prereq: ["E1", "E2"] },
   E11: { name: "Persamaan Eksponen",            short: "aˣ=aʸ",     prereq: ["E1", "E2", "E3", "E4", "E6", "E7"] },
 };
 const CONCEPT_ORDER = ["E1", "E2", "E3", "E4", "E5", "E6", "E7", "E8", "E9", "E10", "E11"];
@@ -85,14 +85,30 @@ const MATERI = {
     contoh: ["\\sqrt{2}\\times\\sqrt{8} = \\sqrt{16} = 4", "3\\sqrt{5} + 2\\sqrt{5} = 5\\sqrt{5}", "\\dfrac{1}{\\sqrt{2}} = \\dfrac{1\\times\\sqrt2}{\\sqrt2\\times\\sqrt2} = \\dfrac{\\sqrt2}{2}"],
   },
   E10: {
-    formula: ["y = a\\cdot b^{x} \\quad (a=\\text{nilai awal},\\ b=\\text{faktor pertumbuhan/peluruhan})"],
-    penjelasan: "Fungsi eksponensial memodelkan fenomena yang berubah berlipat. Jika $b>1$: PERTUMBUHAN (grafik naik). Jika $0<b<1$: PELURUHAN (grafik turun mendekati nol). Grafik selalu memotong sumbu-y di $(0,a)$ dan tidak pernah menyentuh sumbu-x (asimtot datar).",
-    contoh: ["N(t) = 100\\cdot 2^{t} \\quad \\text{(pertumbuhan, } b=2>1\\text{)}", "V(t) = 20\\,000\\,000\\cdot(0{,}9)^{t} \\quad \\text{(peluruhan, } 0<b<1\\text{)}"],
+    formula: [
+      "N_t = N_0(1+p)^{t} \\quad \\text{PERTUMBUHAN}\\ (p>0=\\text{laju pertambahan, bentuk desimal})",
+      "M_t = M_0(1-p)^{t} \\quad \\text{PELURUHAN}\\ (0<p<1=\\text{laju penyusutan, bentuk desimal})",
+    ],
+    penjelasan: "Jika suatu besaran bertambah dengan laju TETAP $p$ (desimal, $p>0$) setiap periode/waktu, nilai awal $N_0$ berubah menjadi $N_1=N_0+p\\cdot N_0=N_0(1+p)$ setelah 1 periode. Periode kedua nilai itu dikalikan $(1+p)$ lagi: $N_2=N_1(1+p)=N_0(1+p)^2$. Polanya berulang, sehingga setelah $t$ periode: $N_t=N_0(1+p)^t$. Kalau besarannya BERKURANG dengan laju tetap $p$ ($0<p<1$) setiap periode, logikanya sama tapi mengurangkan: $M_1=M_0-p\\cdot M_0=M_0(1-p)$, sehingga $M_t=M_0(1-p)^t$.",
+    contoh: [
+      "\\text{Bakteri awal } 500\\text{ sel bertambah } 20\\%\\text{ tiap jam: } N(t)=500(1{,}2)^t \\to N(3)=500(1{,}2)^3=864\\text{ sel}",
+      "\\text{Investasi Rp1.000.000 bertumbuh } 8\\%\\text{/tahun: } M(t)=1.000.000(1{,}08)^t \\to M(5)\\approx \\text{Rp1.469.300}",
+      "\\text{Zat radioaktif } 800\\text{ gram meluruh } 50\\%\\text{ tiap periode: } M_t=800(1-0{,}5)^t \\to M(3)=800(0{,}5)^3=100\\text{ gram}",
+      "\\text{Motor Rp15.000.000 menyusut } 15\\%\\text{/tahun: } M(t)=15.000.000(0{,}85)^t \\to M(2)=\\text{Rp10.837.500}",
+    ],
   },
   E11: {
-    formula: ["\\text{Jika } a^x = a^y\\ (a>0,\\ a\\neq1),\\ \\text{maka } x=y"],
-    penjelasan: "Untuk menyelesaikan persamaan eksponen $a^x=b$, samakan dulu basis kedua ruas (ubah $b$ jadi bentuk pangkat dari $a$), baru pangkat kedua ruas bisa langsung disamakan.",
-    contoh: ["2^x=8 \\;\\to\\; 2^x=2^3 \\;\\to\\; x=3", "3^{2x}=81 \\;\\to\\; 3^{2x}=3^4 \\;\\to\\; 2x=4 \\;\\to\\; x=2", "5^{x+1}=125 \\;\\to\\; 5^{x+1}=5^3 \\;\\to\\; x+1=3 \\;\\to\\; x=2"],
+    formula: [
+      "a^{f(x)} = a^{g(x)}\\ (a>0,\\ a\\neq1) \\;\\Rightarrow\\; f(x)=g(x)",
+      "a^{h(x)} = b^{h(x)}\\ (a,b>0,\\ a\\neq b) \\;\\Rightarrow\\; h(x)=0",
+      "P\\cdot(a^{x})^{2} + Q\\cdot a^{x} + R = 0 \\;\\xrightarrow{u=a^{x}}\\; Pu^{2}+Qu+R=0",
+    ],
+    penjelasan: "Kalau basis kedua ruas SUDAH sama (atau bisa disamakan dengan sifat eksponen), langsung samakan pangkatnya: $f(x)=g(x)$. Kalau basisnya berbeda tapi pangkatnya sudah sama persis di kedua ruas, satu-satunya cara persamaan itu benar adalah pangkatnya $=0$ (karena $a^0=b^0=1$). Untuk bentuk yang menyerupai persamaan kuadrat (ada $a^{2x}$ dan $a^x$ dalam satu persamaan), misalkan $u=a^x$ dulu supaya jadi $Pu^2+Qu+R=0$, selesaikan $u$ dengan pemfaktoran/rumus ABC, baru kembalikan $a^x=u$ untuk mencari $x$ (nilai $u$ harus positif karena $a^x>0$).",
+    contoh: [
+      "3^{5x-9}=3^{2x+3} \\;\\to\\; 5x-9=2x+3 \\;\\to\\; 3x=12 \\;\\to\\; x=4",
+      "8^{x+2}=32^{x-1} \\;\\to\\; (2^3)^{x+2}=(2^5)^{x-1} \\;\\to\\; 3x+6=5x-5 \\;\\to\\; x=\\tfrac{11}{2}",
+      "4^{x}-5\\cdot2^{x}+4=0 \\;\\xrightarrow{u=2^{x}}\\; u^2-5u+4=0 \\;\\to\\;(u-1)(u-4)=0 \\;\\to\\; u=1\\text{ atau }u=4 \\;\\to\\; x=0\\text{ atau }x=2",
+    ],
   },
 };
 const HINTS = {
@@ -105,8 +121,8 @@ const HINTS = {
   E7: { t1: "Pangkat negatif berarti KEBALIKAN (1 per basis-pangkat-positifnya) — bukan tanda minus di depan hasil.", t2: "Contoh: $4^{-1} = \\dfrac{1}{4^1} = \\dfrac14$ (bukan $-4$).", full: "$a^{-n}=\\dfrac{1}{a^n}$. Jadi $3^{-2}=\\dfrac{1}{3^2}=\\dfrac19$ — bukan $-9$ dan bukan $-\\dfrac19$." },
   E8: { t1: "Ingat: pangkat pecahan berarti bentuk akar — $a^{m/n}$ = akar pangkat $n$ dari $a^m$, bukan $a$ dibagi $n$.", t2: "Contoh: $27^{1/3}$ = akar pangkat 3 dari 27 = 3 (bukan $27/3=9$).", full: "$a^{m/n}=\\sqrt[n]{a^m}$. Pembilang pangkat ($m$) masuk ke dalam akar, penyebut pangkat ($n$) jadi indeks/tingkat akarnya." },
   E9: { t1: "Penjumlahan/pengurangan bentuk akar hanya bisa digabung kalau bilangan di dalam akarnya SAMA (sejenis).", t2: "Contoh: $2\\sqrt3+5\\sqrt3=7\\sqrt3$ (sejenis, boleh), tapi $2\\sqrt3+5\\sqrt2$ tidak bisa disederhanakan (tidak sejenis).", full: "Untuk perkalian, $\\sqrt a\\times\\sqrt b=\\sqrt{ab}$ selalu boleh digabung. Untuk merasionalkan penyebut berbentuk akar, kalikan pembilang & penyebut dengan bentuk yang sama supaya akar di penyebut hilang." },
-  E10: { t1: "Perhatikan nilai $b$ (faktor pengali): kalau $b>1$ itu pertumbuhan (naik), kalau $0<b<1$ itu peluruhan (turun).", t2: "Nilai awal (saat $x=0$) selalu sama dengan $a$, karena $b^x$ menjadi $b^0=1$ sehingga $y=a\\times1=a$.", full: "$y=a\\cdot b^x$. Grafik selalu mendekati sumbu-x tapi tidak pernah menyentuhnya (asimtot). Growth: $b>1$, Decay: $0<b<1$." },
-  E11: { t1: "Untuk menyelesaikan $a^x=b$, samakan dulu basis kedua ruas (ubah $b$ jadi bentuk pangkat dari $a$).", t2: "Contoh: $2^x=16 \\to$ ubah 16 jadi $2^4 \\to 2^x=2^4 \\to x=4$.", full: "Kalau basis kedua ruas sudah sama, pangkatnya pasti sama juga, sehingga $x$ bisa langsung dibaca. Kadang perlu sifat eksponen lain dulu untuk menyederhanakan salah satu ruas." },
+  E10: { t1: "Cari dulu nilai $p$ (laju perubahan dalam desimal, misalnya 20% = 0,2), lalu tentukan apakah besarannya BERTAMBAH (pakai $1+p$) atau BERKURANG (pakai $1-p$).", t2: "Rumusnya berasal dari perkalian berulang: tiap periode nilainya dikalikan $(1+p)$ atau $(1-p)$ lagi, sehingga setelah $t$ periode faktor itu dipangkatkan $t$.", full: "Pertumbuhan: $N_t=N_0(1+p)^t$. Peluruhan: $M_t=M_0(1-p)^t$. $N_0$/$M_0$ = nilai awal (saat $t=0$), $p$ = persentase perubahan dalam bentuk desimal, $t$ = banyak periode." },
+  E11: { t1: "Kalau basis kedua ruas sudah sama (atau bisa disamakan), langsung samakan pangkatnya: $f(x)=g(x)$.", t2: "Kalau ada $a^{2x}$ DAN $a^x$ dalam satu persamaan, itu tandanya bentuk kuadrat tersamar — misalkan $u=a^x$ dulu, selesaikan $u$, baru cari $x$.", full: "Basis sama → samakan pangkat: $a^{f(x)}=a^{g(x)}\\Rightarrow f(x)=g(x)$. Basis beda tapi pangkat sama di kedua ruas → pangkatnya harus 0. Bentuk kuadrat tersamar → substitusi $u=a^x$, selesaikan $Pu^2+Qu+R=0$, lalu kembalikan ke $a^x=u$ (ingat $u$ harus $>0$)." },
 };
 const PRACTICE_POOL = {
   E1: [
@@ -311,13 +327,13 @@ function MathText({ text }) {
   );
 }
 // ---------------- Komponen: grafik contoh pertumbuhan & peluruhan eksponensial (untuk materi E10) ----------------
-const EXP_GROWTH_DATA = Array.from({ length: 7 }, (_, x) => ({ x, y: Math.round(Math.pow(2, x) * 10) / 10 }));
-const EXP_DECAY_DATA = Array.from({ length: 7 }, (_, x) => ({ x, y: Math.round(100 * Math.pow(0.6, x) * 10) / 10 }));
+const EXP_GROWTH_DATA = Array.from({ length: 7 }, (_, t) => ({ x: t, y: Math.round(500 * Math.pow(1.2, t) * 10) / 10 }));
+const EXP_DECAY_DATA = Array.from({ length: 7 }, (_, t) => ({ x: t, y: Math.round(800 * Math.pow(0.5, t) * 10) / 10 }));
 function ExpFunctionCharts() {
   return (
     <div style={{ display: "flex", gap: 14, flexWrap: "wrap", marginTop: 14 }}>
       <div className="card" style={{ flex: "1 1 260px", minWidth: 240 }}>
-        <div className="tag-eyebrow" style={{ marginBottom: 8 }}>Grafik Pertumbuhan (b &gt; 1) · contoh y = 2ˣ</div>
+        <div className="tag-eyebrow" style={{ marginBottom: 8 }}>Grafik Pertumbuhan (p &gt; 0) · Nₜ = 500(1,2)ᵗ</div>
         <ResponsiveContainer width="100%" height={180}>
           <LineChart data={EXP_GROWTH_DATA} margin={{ top: 4, right: 8, left: -20, bottom: 4 }}>
             <CartesianGrid strokeDasharray="3 3" vertical={false} />
@@ -327,10 +343,10 @@ function ExpFunctionCharts() {
             <Line type="monotone" dataKey="y" stroke={GURU_PALETTE.strong} strokeWidth={2.5} dot={{ r: 3 }} />
           </LineChart>
         </ResponsiveContainer>
-        <p style={{ fontSize: 12, color: "var(--muted)", marginTop: 6 }}>Grafik naik semakin cepat — nilai b lebih dari 1.</p>
+        <p style={{ fontSize: 12, color: "var(--muted)", marginTop: 6 }}>Grafik naik semakin cepat — nilai (1+p) lebih dari 1.</p>
       </div>
       <div className="card" style={{ flex: "1 1 260px", minWidth: 240 }}>
-        <div className="tag-eyebrow" style={{ marginBottom: 8 }}>Grafik Peluruhan (0 &lt; b &lt; 1) · contoh y = 100·(0,6)ˣ</div>
+        <div className="tag-eyebrow" style={{ marginBottom: 8 }}>Grafik Peluruhan (0 &lt; p &lt; 1) · Mₜ = 800(0,5)ᵗ</div>
         <ResponsiveContainer width="100%" height={180}>
           <LineChart data={EXP_DECAY_DATA} margin={{ top: 4, right: 8, left: -20, bottom: 4 }}>
             <CartesianGrid strokeDasharray="3 3" vertical={false} />
@@ -340,7 +356,7 @@ function ExpFunctionCharts() {
             <Line type="monotone" dataKey="y" stroke={GURU_PALETTE.soft} strokeWidth={2.5} dot={{ r: 3 }} />
           </LineChart>
         </ResponsiveContainer>
-        <p style={{ fontSize: 12, color: "var(--muted)", marginTop: 6 }}>Grafik turun mendekati nol — nilai b antara 0 dan 1.</p>
+        <p style={{ fontSize: 12, color: "var(--muted)", marginTop: 6 }}>Grafik turun mendekati nol — nilai (1-p) antara 0 dan 1.</p>
       </div>
     </div>
   );
