@@ -575,8 +575,16 @@ function AppInner() {
   const [examLeaveWarning, setExamLeaveWarning] = useState(false);
   const [examViolations, setExamViolations] = useState(0);
   const EXAM_LENGTH = 15;
-  const [examEssayLink, setExamEssayLink] = useState("");
-  const [examEssayError, setExamEssayError] = useState("");
+  const [examEssayConfirmed, setExamEssayConfirmed] = useState(false);
+
+  // ---------- Form Esai (Google Form milik guru, per sekolah) ----------
+  // Menggantikan mekanisme lama (siswa tempel link Drive pribadi). Sekarang siswa mengunggah
+  // jawaban esai lewat Google Form yang dibuat & dimiliki guru (file masuk ke Drive guru,
+  // siswa lain tidak bisa melihat file siswa lain).
+  const [essayFormUrl, setEssayFormUrl] = useState("");
+  const [essayFormUrlInput, setEssayFormUrlInput] = useState("");
+  const [essayFormSaving, setEssayFormSaving] = useState(false);
+  const [essayFormMsg, setEssayFormMsg] = useState("");
 
   // ---------- Navigasi ----------
   const [screen, setScreen] = useState("dashboard"); // dashboard | materi | latihan | diagnosis | hint | ujian | ujianSoal | ujianHasil | progress | profil | komikList | komikChapter
@@ -977,7 +985,7 @@ function AppInner() {
     setExamCurrent(idx);
   }
 
-  function finishExam(essayLink) {
+  function finishExam(essaySubmitted) {
     let correct = 0;
     const details = examQuestions.map((q, i) => {
       const ansIdx = examAnswers[i];
@@ -990,35 +998,26 @@ function AppInner() {
     const durationSec = examStartTime ? Math.round((Date.now() - examStartTime) / 1000) : null;
     const result = {
       score, correct, total, date: new Date().toISOString(), details, durationSec, violations: examViolations,
-      essayDriveLink: essayLink || null,
+      essaySubmitted: !!essaySubmitted,
     };
     setExamResult(result);
     setExamHistory((h) => [result, ...h].slice(0, 10));
     setExamLocked(false);
     setExamLeaveWarning(false);
     setExamStartTime(null);
-    setExamEssayLink("");
+    setExamEssayConfirmed(false);
     try {
       if (document.fullscreenElement && document.exitFullscreen) document.exitFullscreen().catch(() => {});
     } catch (e) {}
     setScreen("ujianHasil");
   }
 
-  function isValidDriveLink(link) {
-    return /^https:\/\/(drive|docs)\.google\.com\//.test(link.trim());
-  }
-
   function submitExamEssayAndFinish() {
-    const link = examEssayLink.trim();
-    if (link && !isValidDriveLink(link)) {
-      setExamEssayError("Link harus berupa link Google Drive/Docs yang valid (diawali https://drive.google.com/ atau https://docs.google.com/).");
-      return;
-    }
-    finishExam(link);
+    finishExam(true);
   }
 
   function skipExamEssay() {
-    finishExam();
+    finishExam(false);
   }
 
   async function logout() {
@@ -1229,6 +1228,56 @@ function AppInner() {
     if (mode === "app" && profile?.role === "guru" && profile?.isAdmin && guruTab === "kodeAkses") loadAccessCodes();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mode, profile, guruTab]);
+
+  // ---------- Form Esai: slug sekolah dipakai sebagai ID dokumen settings ----------
+  function sekolahSlug(s) {
+    return (s || "").trim().toUpperCase().replace(/\s+/g, "");
+  }
+
+  function isValidGoogleFormLink(link) {
+    return /^https:\/\/docs\.google\.com\/forms\//.test(link.trim());
+  }
+
+  async function loadEssayFormUrl(sekolahName) {
+    const slug = sekolahSlug(sekolahName);
+    if (!slug) return;
+    try {
+      const snap = await getDoc(doc(db, "essayFormSettings", slug));
+      const url = snap.exists() ? snap.data().formUrl || "" : "";
+      setEssayFormUrl(url);
+      setEssayFormUrlInput(url);
+    } catch (e) {
+      // Gagal memuat pengaturan Form -> biarkan kosong, siswa tetap bisa lewati esai
+    }
+  }
+
+  useEffect(() => {
+    if (mode === "app" && profile?.sekolah) loadEssayFormUrl(profile.sekolah);
+  }, [mode, profile]);
+
+  async function saveEssayFormUrl() {
+    setEssayFormMsg("");
+    const url = essayFormUrlInput.trim();
+    if (url && !isValidGoogleFormLink(url)) {
+      setEssayFormMsg("Link harus berupa link Google Form yang valid (diawali https://docs.google.com/forms/).");
+      return;
+    }
+    const slug = sekolahSlug(profile?.sekolah);
+    if (!slug) {
+      setEssayFormMsg("Lengkapi data sekolah di profil kamu terlebih dahulu sebelum mengatur Form.");
+      return;
+    }
+    setEssayFormSaving(true);
+    try {
+      await setDoc(doc(db, "essayFormSettings", slug), { formUrl: url, sekolah: profile.sekolah, updatedAt: serverTimestamp() }, { merge: true });
+      setEssayFormUrl(url);
+      setEssayFormMsg(url ? "Link Google Form tersimpan." : "Link Google Form dihapus.");
+    } catch (e) {
+      setEssayFormMsg("Gagal menyimpan. Coba lagi.");
+    } finally {
+      setEssayFormSaving(false);
+    }
+  }
 
   async function createAccessCode() {
     setKodeError("");
@@ -1524,12 +1573,12 @@ function AppInner() {
               </div>
             </div>
 
-            {guruSelectedAttempt.essayDriveLink && (
+            {guruSelectedAttempt.essaySubmitted && (
               <div className="card" style={{ marginBottom: 16, background: "var(--brand-light)", border: "1px solid var(--brand)" }}>
-                <div style={{ fontSize: 12.5, fontWeight: 700, marginBottom: 6, color: "var(--brand-dark)" }}>Jawaban Esai Terlampir (Google Drive)</div>
-                <a href={guruSelectedAttempt.essayDriveLink} target="_blank" rel="noopener noreferrer" className="btn-primary" style={{ display: "inline-flex" }}>
-                  Buka Link Drive
-                </a>
+                <div style={{ fontSize: 12.5, fontWeight: 700, marginBottom: 4, color: "var(--brand-dark)" }}>Jawaban Esai Dikirim via Google Form</div>
+                <div style={{ fontSize: 12, color: "var(--brand-dark)" }}>
+                  Siswa mengonfirmasi sudah mengunggah jawaban esai. Cek isinya di respons Google Form / folder Drive kamu (cari berdasarkan nama siswa &amp; tanggal ujian).
+                </div>
               </div>
             )}
 
@@ -2039,24 +2088,35 @@ function AppInner() {
                   <div className="card">
                     <div className="tag-eyebrow">Unggah Jawaban Esai (Opsional)</div>
                     <h2 className="disp" style={{ fontSize: 17, marginBottom: 8 }}>Ada jawaban esai tulisan tangan?</h2>
-                    <p style={{ fontSize: 13.5, color: "var(--muted)", marginBottom: 14 }}>
-                      Kalau gurumu meminta jawaban esai/uraian secara tertulis, unggah foto/scan/dokumennya ke Google Drive kamu, atur akses jadi "siapa saja yang punya link bisa melihat", lalu tempel link-nya di bawah ini sebelum menyelesaikan ujian. Kalau tidak ada esai, langsung klik "Selesaikan Ujian" tanpa mengisi link.
-                    </p>
-                    {examEssayError && <div className="err-box"><AlertTriangle size={14} style={{ verticalAlign: -2 }} /> {examEssayError}</div>}
-                    <div style={{ marginBottom: 14 }}>
-                      <input
-                        type="text"
-                        placeholder="Tempel link Google Drive/Docs di sini (https://drive.google.com/...)"
-                        value={examEssayLink}
-                        onChange={(e) => { setExamEssayLink(e.target.value); setExamEssayError(""); }}
-                      />
-                    </div>
-                    <div style={{ display: "flex", gap: 10 }}>
-                      <button className="btn-ghost" onClick={skipExamEssay}>Lewati, Tidak Ada Esai</button>
-                      <button className="btn-primary" disabled={!examEssayLink.trim()} onClick={submitExamEssayAndFinish}>
-                        Kirim Link &amp; Selesaikan Ujian <ArrowRight size={15} />
-                      </button>
-                    </div>
+                    {essayFormUrl ? (
+                      <>
+                        <p style={{ fontSize: 13.5, color: "var(--muted)", marginBottom: 14 }}>
+                          Kalau gurumu meminta jawaban esai/uraian secara tertulis, unggah foto/scan/dokumennya lewat Google Form di bawah ini (bukan Drive pribadimu) — jawabanmu langsung masuk ke Drive guru dan siswa lain tidak bisa melihat jawabanmu. Kalau tidak ada esai, langsung klik "Selesaikan Ujian" tanpa membuka Form.
+                        </p>
+                        <div style={{ marginBottom: 14 }}>
+                          <a href={essayFormUrl} target="_blank" rel="noopener noreferrer" className="btn-primary" style={{ display: "inline-flex" }}>
+                            Buka Google Form untuk Unggah Jawaban <ArrowRight size={15} />
+                          </a>
+                        </div>
+                        <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, marginBottom: 14, cursor: "pointer" }}>
+                          <input type="checkbox" checked={examEssayConfirmed} onChange={(e) => setExamEssayConfirmed(e.target.checked)} style={{ width: "auto" }} />
+                          Saya sudah mengisi &amp; mengunggah jawaban esai di Form tersebut.
+                        </label>
+                        <div style={{ display: "flex", gap: 10 }}>
+                          <button className="btn-ghost" onClick={skipExamEssay}>Lewati, Tidak Ada Esai</button>
+                          <button className="btn-primary" disabled={!examEssayConfirmed} onClick={submitExamEssayAndFinish}>
+                            Selesaikan Ujian <ArrowRight size={15} />
+                          </button>
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        <p style={{ fontSize: 13.5, color: "var(--muted)", marginBottom: 14 }}>
+                          Gurumu belum mengatur link Google Form untuk unggah jawaban esai. Kalau ujian ini tidak memerlukan jawaban esai tertulis, langsung selesaikan ujian.
+                        </p>
+                        <button className="btn-primary" onClick={skipExamEssay}>Selesaikan Ujian <ArrowRight size={15} /></button>
+                      </>
+                    )}
                   </div>
                 )}
 
@@ -2403,6 +2463,30 @@ function AppInner() {
                     <p style={{ fontSize: 12.5, color: "var(--muted)", marginBottom: 14 }}>
                       Data waktu pengerjaan dan rincian jawaban hanya ditampilkan di laman guru dan tidak terlihat oleh siswa.
                     </p>
+
+                    <div className="card" style={{ marginBottom: 18, background: "var(--paper-2)" }}>
+                      <div style={{ fontSize: 12.5, fontWeight: 700, marginBottom: 6 }}>Google Form Unggah Jawaban Esai</div>
+                      <p style={{ fontSize: 12, color: "var(--muted)", marginBottom: 10 }}>
+                        Buat 1 Google Form dengan pertanyaan tipe "Upload file" di akun Google-mu, lalu tempel link Form-nya di sini. File yang diunggah siswa akan masuk ke Drive-mu sendiri (bukan Drive siswa), dan siswa lain tidak bisa melihat file siswa lain. Link ini berlaku untuk semua siswa di sekolah <b>{profile?.sekolah || "-"}</b>.
+                      </p>
+                      {essayFormMsg && <div style={{ fontSize: 12, color: essayFormMsg.startsWith("Gagal") || essayFormMsg.startsWith("Link harus") || essayFormMsg.startsWith("Lengkapi") ? "var(--rose)" : "#0F7A56", marginBottom: 8 }}>{essayFormMsg}</div>}
+                      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                        <input
+                          type="text"
+                          style={{ flex: 1, minWidth: 220 }}
+                          placeholder="https://docs.google.com/forms/d/e/..../viewform"
+                          value={essayFormUrlInput}
+                          onChange={(e) => { setEssayFormUrlInput(e.target.value); setEssayFormMsg(""); }}
+                        />
+                        <button className="btn-primary" disabled={essayFormSaving} onClick={saveEssayFormUrl}>
+                          {essayFormSaving ? <Loader2 size={14} className="spin" /> : null} Simpan Link Form
+                        </button>
+                        {essayFormUrl && (
+                          <a href={essayFormUrl} target="_blank" rel="noopener noreferrer" className="btn-ghost" style={{ display: "inline-flex" }}>Buka Form</a>
+                        )}
+                      </div>
+                    </div>
+
                     <div style={{ display: "flex", gap: 14, flexWrap: "wrap", marginBottom: 18 }}>
                       <div className="card" style={{ flex: 1, minWidth: 140 }}><div style={{ fontSize: 11, color: "var(--muted)" }}>Total percobaan ujian</div><div className="disp" style={{ fontSize: 22 }}>{guruExamAttempts.length}</div></div>
                       <div className="card" style={{ flex: 1, minWidth: 140 }}><div style={{ fontSize: 11, color: "var(--muted)" }}>Rata-rata waktu pengerjaan</div><div className="disp" style={{ fontSize: 18 }}>{formatDuration(guruAvgDurationSec)}</div></div>
@@ -2419,7 +2503,7 @@ function AppInner() {
                               <td>{new Date(h.date).toLocaleDateString("id-ID", { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" })}</td>
                               <td>{h.correct}/{h.total} · {h.score}%</td>
                               <td className="mono">{formatDuration(h.durationSec)}</td>
-                              <td>{h.essayDriveLink ? <span className="pill" style={{ background: "var(--brand-light)", color: "var(--brand-dark)" }}>Ada</span> : <span style={{ fontSize: 11.5, color: "var(--muted)" }}>-</span>}</td>
+                              <td>{h.essaySubmitted ? <span className="pill" style={{ background: "var(--brand-light)", color: "var(--brand-dark)" }}>Ada</span> : <span style={{ fontSize: 11.5, color: "var(--muted)" }}>-</span>}</td>
                               <td>
                                 {h.details && h.details.length > 0 ? (
                                   <button className="btn-ghost" style={{ padding: "5px 10px", fontSize: 11.5 }} onClick={() => setGuruSelectedAttempt(h)}>Lihat Jawaban</button>
