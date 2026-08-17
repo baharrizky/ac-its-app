@@ -469,11 +469,48 @@ function AppInner() {
   const [authError, setAuthError] = useState("");
   const [authSubmitting, setAuthSubmitting] = useState(false);
 
+  // ---------- Konten materi & soal (bisa ditimpa guru, tersimpan di Firestore) ----------
+  const [contentOverrides, setContentOverrides] = useState({});
+  const [contentLoaded, setContentLoaded] = useState(false);
+  useEffect(() => {
+    async function loadContentOverrides() {
+      try {
+        const snap = await getDocs(collection(db, "contentOverrides"));
+        const obj = {};
+        snap.docs.forEach((d) => { obj[d.id] = d.data(); });
+        setContentOverrides(obj);
+      } catch (e) {}
+      setContentLoaded(true);
+    }
+    loadContentOverrides();
+  }, []);
+  const EFFECTIVE_MATERI = useMemo(() => {
+    const out = {};
+    CONCEPT_ORDER.forEach((c) => {
+      const ov = contentOverrides[c];
+      out[c] = {
+        formula: ov?.formula && ov.formula.length ? ov.formula : MATERI[c].formula,
+        penjelasan: ov?.penjelasan || MATERI[c].penjelasan,
+        contoh: ov?.contoh && ov.contoh.length ? ov.contoh : MATERI[c].contoh,
+      };
+    });
+    return out;
+  }, [contentOverrides]);
+  const EFFECTIVE_POOL = useMemo(() => {
+    const out = {};
+    CONCEPT_ORDER.forEach((c) => {
+      const ov = contentOverrides[c];
+      out[c] = ov?.questions && ov.questions.length ? ov.questions : PRACTICE_POOL[c];
+    });
+    return out;
+  }, [contentOverrides]);
+
   // ---------- Progress siswa: latihan konsep (tersimpan di Firestore) ----------
   const [progressLoaded, setProgressLoaded] = useState(false);
   const [attempts, setAttempts] = useState(EMPTY_ATTEMPTS);
   const [misconceptions, setMisconceptions] = useState([]);
   const [poolIndex, setPoolIndex] = useState(EMPTY_POOLIDX);
+  const [completedQ, setCompletedQ] = useState({});
   const [streak, setStreak] = useState(0);
   const [lastActiveDate, setLastActiveDate] = useState(null);
   const streakCheckedRef = useRef(false);
@@ -494,6 +531,7 @@ function AppInner() {
   // ---------- Ujian: tes 15 soal acak, murni mengukur kemampuan (tidak memengaruhi mastery/attempts) ----------
   const [examQuestions, setExamQuestions] = useState([]);
   const [examAnswers, setExamAnswers] = useState([]);
+  const [examSaved, setExamSaved] = useState([]);
   const [examCurrent, setExamCurrent] = useState(0);
   const [examResult, setExamResult] = useState(null);
   const [examHistory, setExamHistory] = useState([]);
@@ -502,6 +540,8 @@ function AppInner() {
   const [examLeaveWarning, setExamLeaveWarning] = useState(false);
   const [examViolations, setExamViolations] = useState(0);
   const EXAM_LENGTH = 15;
+  const [examEssayLink, setExamEssayLink] = useState("");
+  const [examEssayError, setExamEssayError] = useState("");
 
   // ---------- Navigasi ----------
   const [screen, setScreen] = useState("dashboard"); // dashboard | materi | latihan | diagnosis | hint | ujian | ujianSoal | ujianHasil | progress | profil | komikList | komikChapter
@@ -527,6 +567,20 @@ function AppInner() {
   const [newKodeMapelSingkat, setNewKodeMapelSingkat] = useState("");
   const [newKodeNomor, setNewKodeNomor] = useState("");
   const [kodeError, setKodeError] = useState("");
+
+  // ---------- Guru: Kelola Materi & Soal ----------
+  const [ccSelectedConcept, setCcSelectedConcept] = useState("E1");
+  const [ccFormula, setCcFormula] = useState("");
+  const [ccPenjelasan, setCcPenjelasan] = useState("");
+  const [ccContoh, setCcContoh] = useState("");
+  const [ccSaving, setCcSaving] = useState(false);
+  const [ccMsg, setCcMsg] = useState("");
+  const [ccEditingIdx, setCcEditingIdx] = useState(null); // null | "new" | angka indeks
+  const [ccQDifficulty, setCcQDifficulty] = useState("sedang");
+  const [ccQText, setCcQText] = useState("");
+  const [ccQOptions, setCcQOptions] = useState(["", "", "", "", ""]);
+  const [ccQCorrect, setCcQCorrect] = useState(0);
+  const [ccQTags, setCcQTags] = useState(["", "", "", "", ""]);
 
   useEffect(() => {
     const t = setTimeout(() => setAuthTimedOut(true), 12000);
@@ -581,6 +635,7 @@ function AppInner() {
           setAttempts({ ...EMPTY_ATTEMPTS, ...(d.attempts || {}) });
           setMisconceptions(d.misconceptions || []);
           setPoolIndex({ ...EMPTY_POOLIDX, ...(d.poolIndex || {}) });
+          setCompletedQ(d.completedQ || {});
           setTutorMessages(d.tutorMessages || []);
           setExamHistory(d.examHistory || []);
           loadedStreak = d.streak || 0;
@@ -612,8 +667,8 @@ function AppInner() {
 
   useEffect(() => {
     if (!authUser || !profile || profile.role !== "siswa" || !progressLoaded) return;
-    setDoc(doc(db, "progress", authUser.uid), { attempts, misconceptions, poolIndex, streak, lastActiveDate, tutorMessages: tutorMessages.slice(-30), examHistory: examHistory.slice(0, 10) }, { merge: true }).catch(() => {});
-  }, [attempts, misconceptions, poolIndex, streak, lastActiveDate, tutorMessages, examHistory, authUser, profile, progressLoaded]);
+    setDoc(doc(db, "progress", authUser.uid), { attempts, misconceptions, poolIndex, completedQ, streak, lastActiveDate, tutorMessages: tutorMessages.slice(-30), examHistory: examHistory.slice(0, 10) }, { merge: true }).catch(() => {});
+  }, [attempts, misconceptions, poolIndex, completedQ, streak, lastActiveDate, tutorMessages, examHistory, authUser, profile, progressLoaded]);
 
   // ---------- Kunci laman ujian: mencegah siswa keluar/berpindah selama ujian berlangsung ----------
   useEffect(() => {
@@ -721,13 +776,15 @@ function AppInner() {
   }
 
   function currentQ() {
-    const pool = PRACTICE_POOL[activeConcept] || [];
+    const pool = EFFECTIVE_POOL[activeConcept] || [];
     if (pool.length === 0) return { text: "Soal untuk konsep ini belum tersedia.", options: [] };
     const idx = (poolIndex[activeConcept] || 0) % pool.length;
     return pool[idx];
   }
 
   function jumpToQuestion(idx) {
+    const done = (completedQ[activeConcept] || []).includes(idx);
+    if (done) return; // soal ini sudah dijawab & terkunci, tidak bisa dibuka untuk diedit lagi
     setPoolIndex((p) => ({ ...p, [activeConcept]: idx }));
     setSelected(null);
     setDiag(null);
@@ -756,10 +813,21 @@ function AppInner() {
   }
 
   function afterDiagnosisCorrectOrResolved() {
-    // Tetap di materi (activeConcept) yang sama — lanjut ke soal berikutnya dalam pool yang sama,
-    // tidak lompat ke materi lain, supaya latihan terasa fokus per sub-materi.
-    const pool = PRACTICE_POOL[activeConcept] || [];
-    setPoolIndex((p) => ({ ...p, [activeConcept]: pool.length ? (p[activeConcept] + 1) % pool.length : 0 }));
+    // Tetap di materi (activeConcept) yang sama — lanjut ke soal berikutnya yang belum
+    // dijawab dalam pool yang sama, tidak lompat ke materi lain, supaya latihan fokus
+    // per sub-materi. Soal yang baru diselesaikan dikunci agar tidak bisa diubah lagi.
+    const pool = EFFECTIVE_POOL[activeConcept] || [];
+    const finishedIdx = pool.length ? (poolIndex[activeConcept] || 0) % pool.length : 0;
+    const doneSoFar = completedQ[activeConcept] || [];
+    const newDone = doneSoFar.includes(finishedIdx) ? doneSoFar : [...doneSoFar, finishedIdx];
+    setCompletedQ((c) => ({ ...c, [activeConcept]: newDone }));
+    // cari soal berikutnya yang belum dijawab (urut dari setelah soal ini, lalu putar dari awal)
+    let nextIdx = null;
+    for (let step = 1; step <= pool.length; step++) {
+      const cand = (finishedIdx + step) % pool.length;
+      if (!newDone.includes(cand)) { nextIdx = cand; break; }
+    }
+    setPoolIndex((p) => ({ ...p, [activeConcept]: nextIdx !== null ? nextIdx : finishedIdx }));
     setSelected(null);
     setDiag(null);
     setConsecWrong(0);
@@ -788,7 +856,7 @@ function AppInner() {
     const shuffle = (arr) => [...arr].sort(() => Math.random() - 0.5);
     const onePerConcept = shuffle(
       CONCEPT_ORDER.map((c) => {
-        const pool = PRACTICE_POOL[c] || [];
+        const pool = EFFECTIVE_POOL[c] || [];
         if (pool.length === 0) return null;
         const q = pool[Math.floor(Math.random() * pool.length)];
         return { concept: c, ...q };
@@ -798,7 +866,7 @@ function AppInner() {
     if (picked.length < EXAM_LENGTH) {
       const used = new Set(picked.map((q) => q.concept + "|" + q.text));
       const rest = shuffle(
-        CONCEPT_ORDER.flatMap((c) => (PRACTICE_POOL[c] || []).map((q) => ({ concept: c, ...q }))).filter(
+        CONCEPT_ORDER.flatMap((c) => (EFFECTIVE_POOL[c] || []).map((q) => ({ concept: c, ...q }))).filter(
           (q) => !used.has(q.concept + "|" + q.text)
         )
       );
@@ -807,6 +875,7 @@ function AppInner() {
     picked = shuffle(picked);
     setExamQuestions(picked);
     setExamAnswers(new Array(picked.length).fill(null));
+    setExamSaved(new Array(picked.length).fill(false));
     setExamCurrent(0);
     setExamResult(null);
     setExamStartTime(Date.now());
@@ -822,7 +891,13 @@ function AppInner() {
   }
 
   function selectExamAnswer(i) {
+    if (examSaved[examCurrent]) return; // sudah disimpan & dikunci, tidak bisa diubah lagi
     setExamAnswers((a) => { const next = [...a]; next[examCurrent] = i; return next; });
+  }
+
+  function saveExamAnswer() {
+    if (examAnswers[examCurrent] === null || examAnswers[examCurrent] === undefined) return;
+    setExamSaved((s) => { const next = [...s]; next[examCurrent] = true; return next; });
   }
 
   function examPrev() {
@@ -831,14 +906,14 @@ function AppInner() {
 
   function examNext() {
     if (examCurrent < examQuestions.length - 1) setExamCurrent((c) => c + 1);
-    else finishExam();
+    else { setExamEssayError(""); setScreen("ujianEsai"); }
   }
 
   function jumpToExamQuestion(idx) {
     setExamCurrent(idx);
   }
 
-  function finishExam() {
+  function finishExam(essayLink) {
     let correct = 0;
     const details = examQuestions.map((q, i) => {
       const ansIdx = examAnswers[i];
@@ -849,16 +924,37 @@ function AppInner() {
     const total = examQuestions.length;
     const score = total > 0 ? Math.round((correct / total) * 100) : 0;
     const durationSec = examStartTime ? Math.round((Date.now() - examStartTime) / 1000) : null;
-    const result = { score, correct, total, date: new Date().toISOString(), details, durationSec, violations: examViolations };
+    const result = {
+      score, correct, total, date: new Date().toISOString(), details, durationSec, violations: examViolations,
+      essayDriveLink: essayLink || null,
+    };
     setExamResult(result);
     setExamHistory((h) => [result, ...h].slice(0, 10));
     setExamLocked(false);
     setExamLeaveWarning(false);
     setExamStartTime(null);
+    setExamEssayLink("");
     try {
       if (document.fullscreenElement && document.exitFullscreen) document.exitFullscreen().catch(() => {});
     } catch (e) {}
     setScreen("ujianHasil");
+  }
+
+  function isValidDriveLink(link) {
+    return /^https:\/\/(drive|docs)\.google\.com\//.test(link.trim());
+  }
+
+  function submitExamEssayAndFinish() {
+    const link = examEssayLink.trim();
+    if (link && !isValidDriveLink(link)) {
+      setExamEssayError("Link harus berupa link Google Drive/Docs yang valid (diawali https://drive.google.com/ atau https://docs.google.com/).");
+      return;
+    }
+    finishExam(link);
+  }
+
+  function skipExamEssay() {
+    finishExam();
   }
 
   async function logout() {
@@ -924,7 +1020,7 @@ function AppInner() {
     const c = tutorFocusConcept;
     const greet = {
       role: "ai",
-      text: `Halo! Berdasarkan progres belajarmu, kamu masih perlu penguatan di konsep "${CONCEPTS[c].name}". ${MATERI[c].penjelasan} Ada bagian yang membingungkan atau mau coba contoh soal bareng?`,
+      text: `Halo! Berdasarkan progres belajarmu, kamu masih perlu penguatan di konsep "${CONCEPTS[c].name}". ${EFFECTIVE_MATERI[c].penjelasan} Ada bagian yang membingungkan atau mau coba contoh soal bareng?`,
     };
     setTutorMessages((m) => [...m, greet]);
   }, [screen, tutorFocusConcept]);
@@ -1108,6 +1204,105 @@ function AppInner() {
     } catch (e) {}
   }
 
+  function loadConceptEditor(c) {
+    setCcSelectedConcept(c);
+    const m = EFFECTIVE_MATERI[c];
+    setCcFormula((m.formula || []).join("\n"));
+    setCcPenjelasan(m.penjelasan || "");
+    setCcContoh((m.contoh || []).join("\n"));
+    setCcEditingIdx(null);
+    setCcMsg("");
+  }
+
+  async function saveConceptMateri() {
+    setCcSaving(true);
+    setCcMsg("");
+    const payload = {
+      formula: ccFormula.split("\n").map((s) => s.trim()).filter(Boolean),
+      penjelasan: ccPenjelasan.trim(),
+      contoh: ccContoh.split("\n").map((s) => s.trim()).filter(Boolean),
+    };
+    try {
+      await setDoc(doc(db, "contentOverrides", ccSelectedConcept), payload, { merge: true });
+      setContentOverrides((o) => ({ ...o, [ccSelectedConcept]: { ...o[ccSelectedConcept], ...payload } }));
+      setCcMsg("Materi tersimpan.");
+    } catch (e) {
+      setCcMsg("Gagal menyimpan materi. Coba lagi.");
+    }
+    setCcSaving(false);
+  }
+
+  function startAddQuestion() {
+    setCcEditingIdx("new");
+    setCcQDifficulty("sedang");
+    setCcQText("");
+    setCcQOptions(["", "", "", "", ""]);
+    setCcQCorrect(0);
+    setCcQTags(["", "", "", "", ""]);
+    setCcMsg("");
+  }
+
+  function startEditQuestion(idx) {
+    const q = (EFFECTIVE_POOL[ccSelectedConcept] || [])[idx];
+    if (!q) return;
+    setCcEditingIdx(idx);
+    setCcQDifficulty(q.difficulty || "sedang");
+    setCcQText(q.text || "");
+    setCcQOptions(q.options.map((o) => o.text || ""));
+    const correctIdx = q.options.findIndex((o) => o.correct);
+    setCcQCorrect(correctIdx >= 0 ? correctIdx : 0);
+    setCcQTags(q.options.map((o) => o.tag || ""));
+    setCcMsg("");
+  }
+
+  async function saveQuestion() {
+    if (!ccQText.trim() || ccQOptions.some((o) => !o.trim())) {
+      setCcMsg("Lengkapi teks soal dan kelima pilihan jawaban terlebih dahulu.");
+      return;
+    }
+    const newQ = {
+      difficulty: ccQDifficulty,
+      text: ccQText.trim(),
+      options: ccQOptions.map((t, i) =>
+        i === ccQCorrect ? { text: t.trim(), correct: true } : { text: t.trim(), tag: (ccQTags[i] || "").trim() || "Jawaban kurang tepat." }
+      ),
+    };
+    const currentList = [...(EFFECTIVE_POOL[ccSelectedConcept] || [])];
+    if (ccEditingIdx === "new") currentList.push(newQ);
+    else currentList[ccEditingIdx] = newQ;
+    setCcSaving(true);
+    setCcMsg("");
+    try {
+      await setDoc(doc(db, "contentOverrides", ccSelectedConcept), { questions: currentList }, { merge: true });
+      setContentOverrides((o) => ({ ...o, [ccSelectedConcept]: { ...o[ccSelectedConcept], questions: currentList } }));
+      setCcEditingIdx(null);
+      setCcMsg("Soal tersimpan.");
+    } catch (e) {
+      setCcMsg("Gagal menyimpan soal. Coba lagi.");
+    }
+    setCcSaving(false);
+  }
+
+  async function deleteQuestion(idx) {
+    const currentList = [...(EFFECTIVE_POOL[ccSelectedConcept] || [])];
+    currentList.splice(idx, 1);
+    setCcSaving(true);
+    setCcMsg("");
+    try {
+      await setDoc(doc(db, "contentOverrides", ccSelectedConcept), { questions: currentList }, { merge: true });
+      setContentOverrides((o) => ({ ...o, [ccSelectedConcept]: { ...o[ccSelectedConcept], questions: currentList } }));
+      setCcMsg("Soal dihapus.");
+    } catch (e) {
+      setCcMsg("Gagal menghapus soal. Coba lagi.");
+    }
+    setCcSaving(false);
+  }
+
+  useEffect(() => {
+    if (mode === "app" && profile?.role === "guru" && contentLoaded) loadConceptEditor(ccSelectedConcept);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mode, profile, contentLoaded]);
+
   useEffect(() => {
     if (mode === "app" && profile?.role === "siswa" && screen === "leaderboard") loadLeaderboard();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1264,6 +1459,15 @@ function AppInner() {
               </div>
             </div>
 
+            {guruSelectedAttempt.essayDriveLink && (
+              <div className="card" style={{ marginBottom: 16, background: "var(--brand-light)", border: "1px solid var(--brand)" }}>
+                <div style={{ fontSize: 12.5, fontWeight: 700, marginBottom: 6, color: "var(--brand-dark)" }}>Jawaban Esai Terlampir (Google Drive)</div>
+                <a href={guruSelectedAttempt.essayDriveLink} target="_blank" rel="noopener noreferrer" className="btn-primary" style={{ display: "inline-flex" }}>
+                  Buka Link Drive
+                </a>
+              </div>
+            )}
+
             <div className="tag-eyebrow" style={{ marginBottom: 8 }}>Rincian Jawaban</div>
             {guruSelectedAttempt.details.map((d, i) => (
               <div key={i} style={{ marginBottom: 16, paddingBottom: 16, borderBottom: i < guruSelectedAttempt.details.length - 1 ? "1px solid var(--line)" : "none" }}>
@@ -1345,7 +1549,7 @@ function AppInner() {
                     <div style={{ marginBottom: 10 }}>
                       <input
                         type="text"
-                        placeholder="Kode akses (contoh: SMAN10-BINGG-123)"
+                        placeholder="Kode akses (contoh: SMAN5-MAT-003)"
                         value={authKodeAkses}
                         onChange={(e) => setAuthKodeAkses(e.target.value.toUpperCase())}
                         style={{ textTransform: "uppercase" }}
@@ -1385,7 +1589,7 @@ function AppInner() {
                 <button className={"sidebar-navbtn" + (screen === "tutorAI" ? " active" : "")} onClick={() => { setTutorFocusConcept(null); setScreen("tutorAI"); }}><MessageCircle size={17} />Tutor AI</button>
                 <button className={"sidebar-navbtn" + (screen === "materiList" || screen === "materi" ? " active" : "")} onClick={() => setScreen("materiList")}><BookOpen size={17} />Materi</button>
                 <button className={"sidebar-navbtn" + (screen === "latihanList" || screen === "latihan" || screen === "diagnosis" || screen === "hint" ? " active" : "")} onClick={() => setScreen("latihanList")}><PenLine size={17} />Latihan</button>
-                <button className={"sidebar-navbtn" + (screen === "ujian" || screen === "ujianSoal" || screen === "ujianHasil" ? " active" : "")} onClick={() => setScreen("ujian")}><ClipboardList size={17} />Ujian</button>
+                <button className={"sidebar-navbtn" + (screen === "ujian" || screen === "ujianSoal" || screen === "ujianEsai" || screen === "ujianHasil" ? " active" : "")} onClick={() => setScreen("ujian")}><ClipboardList size={17} />Ujian</button>
                 <button className={"sidebar-navbtn" + (screen === "progress" ? " active" : "")} onClick={() => setScreen("progress")}><TrendingUp size={17} />Progress</button>
                 <button className={"sidebar-navbtn" + (screen === "leaderboard" ? " active" : "")} onClick={() => setScreen("leaderboard")}><Trophy size={17} />Peringkat</button>
                 <button className={"sidebar-navbtn" + (screen === "badges" ? " active" : "")} onClick={() => setScreen("badges")}><Award size={17} />Koleksi Badge</button>
@@ -1399,6 +1603,7 @@ function AppInner() {
                 <button className={"sidebar-navbtn" + (guruTab === "analitik" && screen !== "profil" ? " active" : "")} onClick={() => { setGuruTab("analitik"); setScreen("dashboard"); }}><TrendingUp size={17} />Analitik</button>
                 <button className={"sidebar-navbtn" + (guruTab === "ujian" && screen !== "profil" ? " active" : "")} onClick={() => { setGuruTab("ujian"); setGuruSelectedAttempt(null); setScreen("dashboard"); }}><Clock size={17} />Jawaban &amp; Waktu Ujian</button>
                 <button className={"sidebar-navbtn" + (guruTab === "materi" && screen !== "profil" ? " active" : "")} onClick={() => { setGuruTab("materi"); setScreen("dashboard"); }}><Database size={17} />Knowledge Base</button>
+                <button className={"sidebar-navbtn" + (guruTab === "kelolaKonten" && screen !== "profil" ? " active" : "")} onClick={() => { setGuruTab("kelolaKonten"); setScreen("dashboard"); }}><PenLine size={17} />Kelola Materi &amp; Soal</button>
                 {profile.isAdmin && (
                   <button className={"sidebar-navbtn" + (guruTab === "kodeAkses" && screen !== "profil" ? " active" : "")} onClick={() => { setGuruTab("kodeAkses"); setScreen("dashboard"); }}><LockIcon size={17} />Kode Akses</button>
                 )}
@@ -1422,7 +1627,7 @@ function AppInner() {
               <button className={"sidebar-navbtn" + (screen === "tutorAI" ? " active" : "")} onClick={() => { setTutorFocusConcept(null); setScreen("tutorAI"); }}><MessageCircle size={17} />Tutor</button>
               <button className={"sidebar-navbtn" + (screen === "materiList" || screen === "materi" ? " active" : "")} onClick={() => setScreen("materiList")}><BookOpen size={17} />Materi</button>
               <button className={"sidebar-navbtn" + (screen === "latihanList" || screen === "latihan" || screen === "diagnosis" || screen === "hint" ? " active" : "")} onClick={() => setScreen("latihanList")}><PenLine size={17} />Latihan</button>
-              <button className={"sidebar-navbtn" + (screen === "ujian" || screen === "ujianSoal" || screen === "ujianHasil" ? " active" : "")} onClick={() => setScreen("ujian")}><ClipboardList size={17} />Ujian</button>
+              <button className={"sidebar-navbtn" + (screen === "ujian" || screen === "ujianSoal" || screen === "ujianEsai" || screen === "ujianHasil" ? " active" : "")} onClick={() => setScreen("ujian")}><ClipboardList size={17} />Ujian</button>
               <button className={"sidebar-navbtn" + (screen === "progress" ? " active" : "")} onClick={() => setScreen("progress")}><TrendingUp size={17} />Progress</button>
               <button className={"sidebar-navbtn" + (screen === "leaderboard" ? " active" : "")} onClick={() => setScreen("leaderboard")}><Trophy size={17} />Rank</button>
               <button className={"sidebar-navbtn" + (screen === "badges" ? " active" : "")} onClick={() => setScreen("badges")}><Award size={17} />Badge</button>
@@ -1435,6 +1640,7 @@ function AppInner() {
               <button className={"sidebar-navbtn" + (guruTab === "analitik" && screen !== "profil" ? " active" : "")} onClick={() => { setGuruTab("analitik"); setScreen("dashboard"); }}><TrendingUp size={17} />Analitik</button>
               <button className={"sidebar-navbtn" + (guruTab === "ujian" && screen !== "profil" ? " active" : "")} onClick={() => { setGuruTab("ujian"); setGuruSelectedAttempt(null); setScreen("dashboard"); }}><Clock size={17} />Jawaban</button>
               <button className={"sidebar-navbtn" + (guruTab === "materi" && screen !== "profil" ? " active" : "")} onClick={() => { setGuruTab("materi"); setScreen("dashboard"); }}><Database size={17} />KB</button>
+              <button className={"sidebar-navbtn" + (guruTab === "kelolaKonten" && screen !== "profil" ? " active" : "")} onClick={() => { setGuruTab("kelolaKonten"); setScreen("dashboard"); }}><PenLine size={17} />Kelola Konten</button>
               {profile.isAdmin && (
                 <button className={"sidebar-navbtn" + (guruTab === "kodeAkses" && screen !== "profil" ? " active" : "")} onClick={() => { setGuruTab("kodeAkses"); setScreen("dashboard"); }}><LockIcon size={17} />Kode Akses</button>
               )}
@@ -1514,8 +1720,8 @@ function AppInner() {
                         "Materi yang dipelajari siswa: Eksponensial, mencakup konsep " +
                         CONCEPT_ORDER.map((c) => CONCEPTS[c].name).join(", ") + ". " +
                         (tutorFocusConcept
-                          ? "Siswa sedang butuh pendalaman khusus pada konsep: " + CONCEPTS[tutorFocusConcept].name + " (" + MATERI[tutorFocusConcept].penjelasan + "). Fokuskan bantuanmu ke konsep ini."
-                          : "Saat ini siswa sedang fokus pada konsep: " + CONCEPTS[activeConcept].name + " (" + MATERI[activeConcept].penjelasan + ").")
+                          ? "Siswa sedang butuh pendalaman khusus pada konsep: " + CONCEPTS[tutorFocusConcept].name + " (" + EFFECTIVE_MATERI[tutorFocusConcept].penjelasan + "). Fokuskan bantuanmu ke konsep ini."
+                          : "Saat ini siswa sedang fokus pada konsep: " + CONCEPTS[activeConcept].name + " (" + EFFECTIVE_MATERI[activeConcept].penjelasan + ").")
                       }
                     />
                   </div>
@@ -1547,12 +1753,12 @@ function AppInner() {
                     {redirectNote && <div className="misc-item" style={{ marginBottom: 12 }}>↳ {redirectNote}</div>}
                     <div className="tag-eyebrow">Materi · {CONCEPTS[activeConcept].name}</div>
                     <div className="qtext">
-                      {MATERI[activeConcept].formula.map((f, i) => <MathText key={i} text={f} />)}
+                      {EFFECTIVE_MATERI[activeConcept].formula.map((f, i) => <MathText key={i} text={f} />)}
                     </div>
-                    <p style={{ fontSize: 14, lineHeight: 1.6 }}><MathText text={MATERI[activeConcept].penjelasan} /></p>
+                    <p style={{ fontSize: 14, lineHeight: 1.6 }}><MathText text={EFFECTIVE_MATERI[activeConcept].penjelasan} /></p>
                     <div style={{ marginTop: 14 }}>
                       <div className="tag-eyebrow" style={{ marginBottom: 8 }}>Contoh</div>
-                      {MATERI[activeConcept].contoh.map((line, i) => (
+                      {EFFECTIVE_MATERI[activeConcept].contoh.map((line, i) => (
                         <div key={i} className="math-box"><MathText text={line} /></div>
                       ))}
                     </div>
@@ -1583,7 +1789,7 @@ function AppInner() {
                           <div style={{ width: 34, height: 34, borderRadius: 10, background: "var(--brand-light)", color: "var(--brand-dark)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, fontWeight: 700, fontSize: 12.5 }}>{i + 1}</div>
                           <div style={{ flex: 1 }}>
                             <div style={{ fontWeight: 700, fontSize: 13.5 }}>{CONCEPTS[c].name}</div>
-                            <div style={{ fontSize: 11.5, color: "var(--muted)" }} className="mono">{CONCEPTS[c].short} · {PRACTICE_POOL[c].length} soal tersedia</div>
+                            <div style={{ fontSize: 11.5, color: "var(--muted)" }} className="mono">{CONCEPTS[c].short} · {EFFECTIVE_POOL[c].length} soal tersedia</div>
                           </div>
                           <span className="pill" style={{ background: toneColor[st.tone] + "22", color: toneColor[st.tone] }}>{st.label}</span>
                         </button>
@@ -1596,21 +1802,25 @@ function AppInner() {
                   <div className="card">
                     <div className="tag-eyebrow">Latihan · {CONCEPTS[activeConcept].name} · Salah berturut-turut: {consecWrong}</div>
 
-                    {(PRACTICE_POOL[activeConcept] || []).length > 1 && (
+                    {(EFFECTIVE_POOL[activeConcept] || []).length > 1 && (
                       <div style={{ marginBottom: 16 }}>
-                        <div style={{ fontSize: 11.5, color: "var(--muted)", marginBottom: 7 }}>Lompat ke soal (nomor kecil = lebih mudah):</div>
+                        <div style={{ fontSize: 11.5, color: "var(--muted)", marginBottom: 7 }}>
+                          Lompat ke soal yang belum dijawab — <span style={{ color: "#0F7A56" }}>hijau = sudah dijawab &amp; terkunci</span>:
+                        </div>
                         <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-                          {PRACTICE_POOL[activeConcept].map((_, i) => {
-                            const isCurrent = (poolIndex[activeConcept] || 0) % PRACTICE_POOL[activeConcept].length === i;
+                          {EFFECTIVE_POOL[activeConcept].map((_, i) => {
+                            const isCurrent = (poolIndex[activeConcept] || 0) % EFFECTIVE_POOL[activeConcept].length === i;
+                            const isDone = (completedQ[activeConcept] || []).includes(i);
                             return (
-                              <button key={i} onClick={() => jumpToQuestion(i)}
+                              <button key={i} onClick={() => jumpToQuestion(i)} disabled={isDone}
                                 style={{
                                   width: 30, height: 30, borderRadius: 9, fontSize: 12.5, fontWeight: 700,
-                                  border: isCurrent ? "1.5px solid var(--brand)" : "1.5px solid var(--line)",
-                                  background: isCurrent ? "var(--brand)" : "white",
-                                  color: isCurrent ? "white" : "var(--ink)",
+                                  border: isCurrent ? "1.5px solid var(--brand)" : isDone ? "1.5px solid var(--teal)" : "1.5px solid var(--line)",
+                                  background: isCurrent ? "var(--brand)" : isDone ? "var(--teal-light)" : "white",
+                                  color: isCurrent ? "white" : isDone ? "#0F7A56" : "var(--ink)",
+                                  cursor: isDone ? "not-allowed" : "pointer",
                                 }}>
-                                {i + 1}
+                                {isDone ? <CheckCircle2 size={14} /> : i + 1}
                               </button>
                             );
                           })}
@@ -1618,11 +1828,17 @@ function AppInner() {
                       </div>
                     )}
 
-                    <div className="qtext"><MathText text={currentQ().text} /></div>
-                    {currentQ().options.map((opt, i) => (
-                      <button key={i} className={"opt" + (selected === i ? " picked" : "")} onClick={() => setSelected(i)}><MathText text={opt.text} /></button>
-                    ))}
-                    <div style={{ marginTop: 14 }}><button className="btn-primary" disabled={selected === null} onClick={submitAnswer}>Periksa Jawaban <ArrowRight size={15} /></button></div>
+                    {(completedQ[activeConcept] || []).length >= (EFFECTIVE_POOL[activeConcept] || []).length && (EFFECTIVE_POOL[activeConcept] || []).length > 0 ? (
+                      <div className="ok-box"><CheckCircle2 size={18} /> Semua soal pada sub-materi ini sudah kamu selesaikan &amp; terkunci. Pilih sub-materi lain di menu Latihan.</div>
+                    ) : (
+                      <>
+                        <div className="qtext"><MathText text={currentQ().text} /></div>
+                        {currentQ().options.map((opt, i) => (
+                          <button key={i} className={"opt" + (selected === i ? " picked" : "")} onClick={() => setSelected(i)}><MathText text={opt.text} /></button>
+                        ))}
+                        <div style={{ marginTop: 14 }}><button className="btn-primary" disabled={selected === null} onClick={submitAnswer}>Periksa Jawaban <ArrowRight size={15} /></button></div>
+                      </>
+                    )}
                   </div>
                 )}
 
@@ -1690,23 +1906,24 @@ function AppInner() {
 
                 {progressLoaded && screen === "ujianSoal" && examQuestions.length > 0 && (
                   <div className="card">
-                    <div className="tag-eyebrow">Ujian · Soal {examCurrent + 1} dari {examQuestions.length} · Terjawab: {examAnswers.filter((a) => a !== null && a !== undefined).length}/{examQuestions.length}</div>
-                    <div className="bar-track" style={{ marginBottom: 14 }}><div className="bar-fill" style={{ width: `${((examCurrent + 1) / examQuestions.length) * 100}%` }} /></div>
+                    <div className="tag-eyebrow">Ujian · Soal {examCurrent + 1} dari {examQuestions.length} · Tersimpan: {examSaved.filter(Boolean).length}/{examQuestions.length}</div>
+                    <div className="bar-track" style={{ marginBottom: 14 }}><div className="bar-fill" style={{ width: `${(examSaved.filter(Boolean).length / examQuestions.length) * 100}%` }} /></div>
 
                     <div style={{ marginBottom: 16 }}>
-                      <div style={{ fontSize: 11.5, color: "var(--muted)", marginBottom: 7 }}>Lompat ke soal (nomor kecil = lebih mudah):</div>
+                      <div style={{ fontSize: 11.5, color: "var(--muted)", marginBottom: 7 }}>
+                        Lompat ke soal — <span style={{ color: "#0F7A56" }}>hijau = tersimpan &amp; terkunci</span>, <span style={{ color: "#B87A0B" }}>kuning = sudah dipilih, belum disimpan</span>:
+                      </div>
                       <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
                         {examQuestions.map((_, i) => {
                           const isCurrent = examCurrent === i;
-                          const isAnswered = examAnswers[i] !== null && examAnswers[i] !== undefined;
+                          const isSaved = !!examSaved[i];
+                          const isPicked = examAnswers[i] !== null && examAnswers[i] !== undefined;
+                          const bg = isSaved ? "var(--teal-light)" : isPicked ? "var(--amber-light)" : "white";
+                          const color = isSaved ? "#0F7A56" : isPicked ? "#B87A0B" : "var(--ink)";
+                          const border = isCurrent ? "1.5px solid var(--brand)" : isSaved ? "1.5px solid var(--teal)" : isPicked ? "1.5px solid var(--amber)" : "1.5px solid var(--line)";
                           return (
                             <button key={i} onClick={() => jumpToExamQuestion(i)}
-                              style={{
-                                width: 30, height: 30, borderRadius: 9, fontSize: 12.5, fontWeight: 700,
-                                border: isCurrent ? "1.5px solid var(--brand)" : isAnswered ? "1.5px solid var(--teal)" : "1.5px solid var(--line)",
-                                background: isCurrent ? "var(--brand)" : isAnswered ? "var(--teal-light)" : "white",
-                                color: isCurrent ? "white" : isAnswered ? "#0F7A56" : "var(--ink)",
-                              }}>
+                              style={{ width: 30, height: 30, borderRadius: 9, fontSize: 12.5, fontWeight: 700, border, background: isCurrent ? "var(--brand)" : bg, color: isCurrent ? "white" : color }}>
                               {i + 1}
                             </button>
                           );
@@ -1716,12 +1933,62 @@ function AppInner() {
 
                     <div className="qtext"><MathText text={examQuestions[examCurrent].text} /></div>
                     {examQuestions[examCurrent].options.map((opt, i) => (
-                      <button key={i} className={"opt" + (examAnswers[examCurrent] === i ? " picked" : "")} onClick={() => selectExamAnswer(i)}><MathText text={opt.text} /></button>
+                      <button
+                        key={i}
+                        className={"opt" + (examAnswers[examCurrent] === i ? " picked" : "")}
+                        onClick={() => selectExamAnswer(i)}
+                        disabled={!!examSaved[examCurrent]}
+                        style={examSaved[examCurrent] ? { opacity: examAnswers[examCurrent] === i ? 1 : 0.5, cursor: "not-allowed" } : undefined}
+                      >
+                        <MathText text={opt.text} />
+                      </button>
                     ))}
+
+                    {examSaved[examCurrent] ? (
+                      <div style={{ fontSize: 12.5, color: "#0F7A56", fontWeight: 600, margin: "6px 0 4px" }}><CheckCircle2 size={14} style={{ verticalAlign: -2 }} /> Jawaban tersimpan &amp; terkunci, tidak bisa diubah lagi.</div>
+                    ) : (
+                      <div style={{ marginTop: 10 }}>
+                        <button className="btn-primary" disabled={examAnswers[examCurrent] === null || examAnswers[examCurrent] === undefined} onClick={saveExamAnswer}>
+                          <CheckCircle2 size={15} /> Simpan Jawaban
+                        </button>
+                      </div>
+                    )}
+
+                    {examCurrent === examQuestions.length - 1 && examSaved.filter(Boolean).length < examQuestions.length && (
+                      <div style={{ fontSize: 12.5, color: "#B87A0B", marginTop: 10 }}>
+                        <AlertTriangle size={13} style={{ verticalAlign: -2 }} /> Masih ada {examQuestions.length - examSaved.filter(Boolean).length} soal yang belum disimpan.
+                      </div>
+                    )}
+
                     <div style={{ display: "flex", gap: 10, marginTop: 14 }}>
-                      <button className="btn-ghost" disabled={examCurrent === 0} onClick={examPrev}><ArrowLeft size={15} /> Sebelumnya</button>
-                      <button className="btn-primary" disabled={examAnswers[examCurrent] === null} onClick={examNext}>
-                        {examCurrent === examQuestions.length - 1 ? <>Selesai &amp; Lihat Hasil <ArrowRight size={15} /></> : <>Berikutnya <ArrowRight size={15} /></>}
+                      <button className="btn-ghost" disabled={examCurrent === 0} onClick={examPrev}><ArrowLeft size={15} /> Kembali</button>
+                      <button className="btn-primary" onClick={examNext}>
+                        {examCurrent === examQuestions.length - 1 ? <>Lanjut ke Esai <ArrowRight size={15} /></> : <>Selanjutnya <ArrowRight size={15} /></>}
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {progressLoaded && screen === "ujianEsai" && (
+                  <div className="card">
+                    <div className="tag-eyebrow">Unggah Jawaban Esai (Opsional)</div>
+                    <h2 className="disp" style={{ fontSize: 17, marginBottom: 8 }}>Ada jawaban esai tulisan tangan?</h2>
+                    <p style={{ fontSize: 13.5, color: "var(--muted)", marginBottom: 14 }}>
+                      Kalau gurumu meminta jawaban esai/uraian secara tertulis, unggah foto/scan/dokumennya ke Google Drive kamu, atur akses jadi "siapa saja yang punya link bisa melihat", lalu tempel link-nya di bawah ini sebelum menyelesaikan ujian. Kalau tidak ada esai, langsung klik "Selesaikan Ujian" tanpa mengisi link.
+                    </p>
+                    {examEssayError && <div className="err-box"><AlertTriangle size={14} style={{ verticalAlign: -2 }} /> {examEssayError}</div>}
+                    <div style={{ marginBottom: 14 }}>
+                      <input
+                        type="text"
+                        placeholder="Tempel link Google Drive/Docs di sini (https://drive.google.com/...)"
+                        value={examEssayLink}
+                        onChange={(e) => { setExamEssayLink(e.target.value); setExamEssayError(""); }}
+                      />
+                    </div>
+                    <div style={{ display: "flex", gap: 10 }}>
+                      <button className="btn-ghost" onClick={skipExamEssay}>Lewati, Tidak Ada Esai</button>
+                      <button className="btn-primary" disabled={!examEssayLink.trim()} onClick={submitExamEssayAndFinish}>
+                        Kirim Link &amp; Selesaikan Ujian <ArrowRight size={15} />
                       </button>
                     </div>
                   </div>
@@ -2077,7 +2344,7 @@ function AppInner() {
                     {guruExamAttempts.length === 0 && <p style={{ fontSize: 13.5, color: "var(--muted)" }}>Belum ada siswa yang mengerjakan ujian.</p>}
                     {guruExamAttempts.length > 0 && (
                       <table>
-                        <thead><tr><th>Nama</th><th>Kelas</th><th>Tanggal</th><th>Skor</th><th>Waktu Pengerjaan</th><th>Aksi</th></tr></thead>
+                        <thead><tr><th>Nama</th><th>Kelas</th><th>Tanggal</th><th>Skor</th><th>Waktu Pengerjaan</th><th>Esai</th><th>Aksi</th></tr></thead>
                         <tbody>
                           {guruExamAttempts.map((h, i) => (
                             <tr key={i}>
@@ -2086,6 +2353,7 @@ function AppInner() {
                               <td>{new Date(h.date).toLocaleDateString("id-ID", { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" })}</td>
                               <td>{h.correct}/{h.total} · {h.score}%</td>
                               <td className="mono">{formatDuration(h.durationSec)}</td>
+                              <td>{h.essayDriveLink ? <span className="pill" style={{ background: "var(--brand-light)", color: "var(--brand-dark)" }}>Ada</span> : <span style={{ fontSize: 11.5, color: "var(--muted)" }}>-</span>}</td>
                               <td>
                                 {h.details && h.details.length > 0 ? (
                                   <button className="btn-ghost" style={{ padding: "5px 10px", fontSize: 11.5 }} onClick={() => setGuruSelectedAttempt(h)}>Lihat Jawaban</button>
@@ -2108,6 +2376,106 @@ function AppInner() {
                       <thead><tr><th>ID</th><th>Nama konsep</th><th>Deskripsi</th><th>Prasyarat</th><th>Status</th></tr></thead>
                       <tbody>{KB_ROWS.map((r) => (<tr key={r.id}><td className="mono">{r.id}</td><td>{r.nama}</td><td><MathText text={r.deskripsi} /></td><td className="mono">{r.prereq}</td><td>{r.status}</td></tr>))}</tbody>
                     </table>
+                  </div>
+                )}
+
+                {guruTab === "kelolaKonten" && (
+                  <div className="card">
+                    <div className="tag-eyebrow">Kelola Materi &amp; Soal</div>
+                    <p style={{ fontSize: 12.5, color: "var(--muted)", marginBottom: 12 }}>
+                      Perubahan di sini langsung berlaku untuk semua siswa (menu Materi, Latihan, dan Ujian) begitu disimpan.
+                    </p>
+                    <div style={{ marginBottom: 16 }}>
+                      <select value={ccSelectedConcept} onChange={(e) => loadConceptEditor(e.target.value)}>
+                        {CONCEPT_ORDER.map((c) => (<option key={c} value={c}>{CONCEPTS[c].name}</option>))}
+                      </select>
+                    </div>
+                    {ccMsg && <div style={{ fontSize: 12.5, color: ccMsg.startsWith("Gagal") ? "var(--rose)" : "#0F7A56", fontWeight: 600, marginBottom: 10 }}>{ccMsg}</div>}
+
+                    <div className="tag-eyebrow" style={{ marginTop: 4 }}>Materi</div>
+                    <div style={{ marginBottom: 8 }}>
+                      <label style={{ fontSize: 11.5, color: "var(--muted)", display: "block", marginBottom: 4 }}>Rumus (satu baris = satu rumus, format LaTeX seperti $a^n$)</label>
+                      <textarea rows={3} value={ccFormula} onChange={(e) => setCcFormula(e.target.value)} style={{ width: "100%", fontFamily: "'IBM Plex Mono'", fontSize: 13 }} />
+                    </div>
+                    <div style={{ marginBottom: 8 }}>
+                      <label style={{ fontSize: 11.5, color: "var(--muted)", display: "block", marginBottom: 4 }}>Penjelasan</label>
+                      <textarea rows={4} value={ccPenjelasan} onChange={(e) => setCcPenjelasan(e.target.value)} style={{ width: "100%", fontSize: 13.5 }} />
+                    </div>
+                    <div style={{ marginBottom: 12 }}>
+                      <label style={{ fontSize: 11.5, color: "var(--muted)", display: "block", marginBottom: 4 }}>Contoh (satu baris = satu contoh)</label>
+                      <textarea rows={3} value={ccContoh} onChange={(e) => setCcContoh(e.target.value)} style={{ width: "100%", fontFamily: "'IBM Plex Mono'", fontSize: 13 }} />
+                    </div>
+                    <button className="btn-primary" disabled={ccSaving} onClick={saveConceptMateri}>
+                      {ccSaving ? <Loader2 size={15} className="spin" /> : "Simpan Materi"}
+                    </button>
+
+                    <div className="tag-eyebrow" style={{ marginTop: 26 }}>Soal Latihan &amp; Ujian ({(EFFECTIVE_POOL[ccSelectedConcept] || []).length} soal)</div>
+                    <p style={{ fontSize: 12, color: "var(--muted)", marginBottom: 10 }}>Bank soal ini dipakai bersama oleh menu Latihan dan Ujian.</p>
+
+                    {(EFFECTIVE_POOL[ccSelectedConcept] || []).map((q, i) => (
+                      <div key={i} style={{ border: "1px solid var(--line)", borderRadius: 10, padding: "10px 12px", marginBottom: 8, fontSize: 13 }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8 }}>
+                          <div style={{ flex: 1 }}>
+                            <span className="mono" style={{ fontSize: 11, color: "var(--muted)" }}>#{i + 1} · {q.difficulty || "-"}</span>
+                            <div><MathText text={q.text} /></div>
+                          </div>
+                          <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
+                            <button className="btn-ghost" style={{ padding: "4px 10px", fontSize: 11.5 }} onClick={() => startEditQuestion(i)}>Edit</button>
+                            <button className="btn-ghost" style={{ padding: "4px 10px", fontSize: 11.5, color: "var(--rose)" }} onClick={() => deleteQuestion(i)}>Hapus</button>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+
+                    {ccEditingIdx === null && (
+                      <button className="btn-ghost" onClick={startAddQuestion}>+ Tambah Soal Baru</button>
+                    )}
+
+                    {ccEditingIdx !== null && (
+                      <div style={{ border: "1.5px solid var(--brand)", borderRadius: 12, padding: 14, marginTop: 10, background: "var(--brand-light)" }}>
+                        <div className="tag-eyebrow" style={{ marginBottom: 8 }}>{ccEditingIdx === "new" ? "Tambah Soal Baru" : `Edit Soal #${ccEditingIdx + 1}`}</div>
+                        <div style={{ marginBottom: 8 }}>
+                          <label style={{ fontSize: 11.5, color: "var(--muted)", display: "block", marginBottom: 4 }}>Tingkat kesulitan</label>
+                          <select value={ccQDifficulty} onChange={(e) => setCcQDifficulty(e.target.value)}>
+                            <option value="mudah">Mudah</option>
+                            <option value="sedang">Sedang</option>
+                            <option value="sulit">Sulit</option>
+                          </select>
+                        </div>
+                        <div style={{ marginBottom: 8 }}>
+                          <label style={{ fontSize: 11.5, color: "var(--muted)", display: "block", marginBottom: 4 }}>Teks soal (boleh pakai LaTeX, contoh: $2^3 = ?$)</label>
+                          <input type="text" value={ccQText} onChange={(e) => setCcQText(e.target.value)} style={{ width: "100%" }} />
+                        </div>
+                        <label style={{ fontSize: 11.5, color: "var(--muted)", display: "block", marginBottom: 4 }}>5 pilihan jawaban — tandai lingkaran di kiri sebagai jawaban benar</label>
+                        {ccQOptions.map((optText, i) => (
+                          <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+                            <input type="radio" name="ccQCorrect" checked={ccQCorrect === i} onChange={() => setCcQCorrect(i)} />
+                            <input
+                              type="text"
+                              placeholder={`Pilihan ${String.fromCharCode(65 + i)}`}
+                              value={optText}
+                              onChange={(e) => setCcQOptions((arr) => { const n = [...arr]; n[i] = e.target.value; return n; })}
+                              style={{ flex: 1 }}
+                            />
+                            {ccQCorrect !== i && (
+                              <input
+                                type="text"
+                                placeholder="Tag miskonsepsi (opsional)"
+                                value={ccQTags[i]}
+                                onChange={(e) => setCcQTags((arr) => { const n = [...arr]; n[i] = e.target.value; return n; })}
+                                style={{ flex: 1, fontSize: 12 }}
+                              />
+                            )}
+                          </div>
+                        ))}
+                        <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
+                          <button className="btn-ghost" disabled={ccSaving} onClick={() => setCcEditingIdx(null)}>Batal</button>
+                          <button className="btn-primary" disabled={ccSaving} onClick={saveQuestion}>
+                            {ccSaving ? <Loader2 size={15} className="spin" /> : "Simpan Soal"}
+                          </button>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 )}
 
@@ -2190,7 +2558,8 @@ function GlobalStyle() {
         .btn-primary { background:linear-gradient(135deg,var(--brand),var(--brand-dark)); color:white; border:none; padding:11px 20px; border-radius:12px; font-weight:600; font-size:14px; display:inline-flex; align-items:center; gap:6px; box-shadow:0 4px 14px rgba(124,92,252,0.35); }
         .btn-primary:disabled { opacity:0.35; cursor:not-allowed; box-shadow:none; }
         .btn-ghost { background:white; border:1px solid var(--line); color:var(--ink); padding:9px 16px; border-radius:12px; font-size:13.5px; display:inline-flex; align-items:center; gap:6px; }
-        input[type=text],input[type=password],input[type=email] { width:100%; padding:11px 13px; border-radius:12px; border:1.5px solid var(--line); font-size:14px; box-sizing:border-box; background:white; }
+        input[type=text],input[type=password],input[type=email],textarea,select { width:100%; padding:11px 13px; border-radius:12px; border:1.5px solid var(--line); font-size:14px; box-sizing:border-box; background:white; font-family:inherit; }
+        textarea { resize:vertical; }
         textarea { font-family:'Inter'; border-radius:12px; }
         .card { background:white; border:1px solid var(--line); border-radius:18px; padding:22px; box-shadow:0 2px 10px rgba(90,70,190,0.05); }
         .hero-card { background:linear-gradient(135deg,var(--brand) 0%,#A78BFA 55%,#F472B6 130%); color:white; border-radius:20px; padding:24px; box-shadow:0 10px 30px rgba(124,92,252,0.35); }
