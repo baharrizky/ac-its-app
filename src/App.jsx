@@ -86,15 +86,15 @@ const MATERI = {
   },
   E10: {
     formula: [
-      "N_t = N_0(1+p)^{t} \\quad \\text{PERTUMBUHAN}\\ (p>0=\\text{laju pertambahan, bentuk desimal})",
-      "M_t = M_0(1-p)^{t} \\quad \\text{PELURUHAN}\\ (0<p<1=\\text{laju penyusutan, bentuk desimal})",
+      "\\begin{gathered} N_t = N_0(1+p)^{t} \\\\[6pt] \\footnotesize\\text{PERTUMBUHAN — }p>0\\text{ (laju pertambahan, bentuk desimal)} \\end{gathered}",
+      "\\begin{gathered} M_t = M_0(1-p)^{t} \\\\[6pt] \\footnotesize\\text{PELURUHAN — }0<p<1\\text{ (laju penyusutan, bentuk desimal)} \\end{gathered}",
     ],
     penjelasan: "Jika suatu besaran bertambah dengan laju TETAP $p$ (desimal, $p>0$) setiap periode/waktu, nilai awal $N_0$ berubah menjadi $N_1=N_0+p\\cdot N_0=N_0(1+p)$ setelah 1 periode. Periode kedua nilai itu dikalikan $(1+p)$ lagi: $N_2=N_1(1+p)=N_0(1+p)^2$. Polanya berulang, sehingga setelah $t$ periode: $N_t=N_0(1+p)^t$. Kalau besarannya BERKURANG dengan laju tetap $p$ ($0<p<1$) setiap periode, logikanya sama tapi mengurangkan: $M_1=M_0-p\\cdot M_0=M_0(1-p)$, sehingga $M_t=M_0(1-p)^t$.",
     contoh: [
-      "\\text{Bakteri awal } 500\\text{ sel bertambah } 20\\%\\text{ tiap jam: } N(t)=500(1{,}2)^t \\to N(3)=500(1{,}2)^3=864\\text{ sel}",
-      "\\text{Investasi Rp1.000.000 bertumbuh } 8\\%\\text{/tahun: } M(t)=1.000.000(1{,}08)^t \\to M(5)\\approx \\text{Rp1.469.300}",
-      "\\text{Zat radioaktif } 800\\text{ gram meluruh } 50\\%\\text{ tiap periode: } M_t=800(1-0{,}5)^t \\to M(3)=800(0{,}5)^3=100\\text{ gram}",
-      "\\text{Motor Rp15.000.000 menyusut } 15\\%\\text{/tahun: } M(t)=15.000.000(0{,}85)^t \\to M(2)=\\text{Rp10.837.500}",
+      "\\begin{gathered}\\footnotesize\\text{Bakteri awal 500 sel, bertambah }20\\%\\text{ tiap jam}\\\\[6pt] N(t)=500(1{,}2)^t \\to N(3)=500(1{,}2)^3=864\\text{ sel}\\end{gathered}",
+      "\\begin{gathered}\\footnotesize\\text{Investasi Rp1.000.000, bertumbuh }8\\%\\text{ per tahun}\\\\[6pt] M(t)=1.000.000(1{,}08)^t \\to M(5)\\approx\\text{Rp1.469.300}\\end{gathered}",
+      "\\begin{gathered}\\footnotesize\\text{Zat radioaktif 800 gram, meluruh }50\\%\\text{ tiap periode}\\\\[6pt] M_t=800(1-0{,}5)^t \\to M(3)=800(0{,}5)^3=100\\text{ gram}\\end{gathered}",
+      "\\begin{gathered}\\footnotesize\\text{Motor Rp15.000.000, menyusut }15\\%\\text{ per tahun}\\\\[6pt] M(t)=15.000.000(0{,}85)^t \\to M(2)=\\text{Rp10.837.500}\\end{gathered}",
     ],
   },
   E11: {
@@ -2804,8 +2804,11 @@ function GlobalStyle() {
         .stat-chip { background:white; border:1px solid var(--line); border-radius:14px; padding:10px 14px; display:flex; align-items:center; gap:8px; font-size:13px; font-weight:600; }
         .opt { display:block; width:100%; text-align:left; padding:13px 14px; border-radius:12px; border:1.5px solid var(--line); background:var(--paper-2); margin-bottom:9px; font-size:14.5px; font-family:'IBM Plex Mono'; transition:border-color .15s; }
         .opt.picked { border-color:var(--brand); background:var(--brand-light); }
-        .qtext { font-family:'STIX Two Math','Cambria Math',serif; font-size:22px; margin:14px 0 20px; padding:18px 20px; background:var(--paper-2); border-radius:14px; border:1px solid var(--line); text-align:center; }
-        .math-box { font-family:'STIX Two Math','Cambria Math',serif; font-size:19px; padding:14px 16px; background:var(--paper-2); border-radius:12px; border:1px solid var(--line); margin-bottom:8px; }
+        .qtext { font-family:'STIX Two Math','Cambria Math',serif; font-size:clamp(16px,4.2vw,22px); margin:14px 0 20px; padding:18px 20px; background:var(--paper-2); border-radius:14px; border:1px solid var(--line); text-align:center; overflow-x:auto; -webkit-overflow-scrolling:touch; }
+        .qtext .katex-display { margin:8px 0; overflow-x:auto; overflow-y:hidden; padding:2px 0; }
+        .qtext .katex-display:not(:last-child) { margin-bottom:18px; }
+        .math-box { font-family:'STIX Two Math','Cambria Math',serif; font-size:clamp(14px,3.6vw,19px); padding:14px 16px; background:var(--paper-2); border-radius:12px; border:1px solid var(--line); margin-bottom:8px; text-align:center; overflow-x:auto; -webkit-overflow-scrolling:touch; }
+        .math-box .katex-display { margin:0; overflow-x:auto; overflow-y:hidden; padding:2px 0; }
         .math-sup { vertical-align:super; font-size:0.68em; line-height:0; }
         .math-radical { display:inline-flex; align-items:flex-start; white-space:nowrap; }
         .math-radical-idx { font-size:0.58em; margin-right:-3px; margin-top:-3px; }
