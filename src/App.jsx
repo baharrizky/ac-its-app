@@ -978,7 +978,7 @@ function AppInner() {
 
   function examNext() {
     if (examCurrent < examQuestions.length - 1) setExamCurrent((c) => c + 1);
-    else { setExamEssayError(""); setScreen("ujianEsai"); }
+    else setScreen("ujianEsai");
   }
 
   function jumpToExamQuestion(idx) {
@@ -1014,10 +1014,6 @@ function AppInner() {
 
   function submitExamEssayAndFinish() {
     finishExam(true);
-  }
-
-  function skipExamEssay() {
-    finishExam(false);
   }
 
   async function logout() {
@@ -2078,7 +2074,7 @@ function AppInner() {
                     <div style={{ display: "flex", gap: 10, marginTop: 14 }}>
                       <button className="btn-ghost" disabled={examCurrent === 0} onClick={examPrev}><ArrowLeft size={15} /> Kembali</button>
                       <button className="btn-primary" onClick={examNext}>
-                        {examCurrent === examQuestions.length - 1 ? <>Lanjut ke Esai <ArrowRight size={15} /></> : <>Selanjutnya <ArrowRight size={15} /></>}
+                        {examCurrent === examQuestions.length - 1 ? <>Lanjut Kirim Jawaban <ArrowRight size={15} /></> : <>Selanjutnya <ArrowRight size={15} /></>}
                       </button>
                     </div>
                   </div>
@@ -2086,24 +2082,23 @@ function AppInner() {
 
                 {progressLoaded && screen === "ujianEsai" && (
                   <div className="card">
-                    <div className="tag-eyebrow">Unggah Jawaban Esai (Opsional)</div>
-                    <h2 className="disp" style={{ fontSize: 17, marginBottom: 8 }}>Ada jawaban esai tulisan tangan?</h2>
+                    <div className="tag-eyebrow">Kirim Jawaban Tulis Tangan (Wajib)</div>
+                    <h2 className="disp" style={{ fontSize: 17, marginBottom: 8 }}>Unggah jawaban tulis tangan kamu</h2>
                     {essayFormUrl ? (
                       <>
                         <p style={{ fontSize: 13.5, color: "var(--muted)", marginBottom: 14 }}>
-                          Kalau gurumu meminta jawaban esai/uraian secara tertulis, unggah foto/scan/dokumennya lewat Google Form di bawah ini (bukan Drive pribadimu) — jawabanmu langsung masuk ke Drive guru dan siswa lain tidak bisa melihat jawabanmu. Kalau tidak ada esai, langsung klik "Selesaikan Ujian" tanpa membuka Form.
+                          Kerjakan soal esai/uraian di kertas, foto/scan hasilnya, lalu unggah lewat Google Form di bawah ini (bukan Drive pribadimu) — jawabanmu langsung masuk ke Drive guru dan siswa lain tidak bisa melihat jawabanmu. Ujian belum bisa diselesaikan sebelum kamu mengunggah jawaban lewat Form ini.
                         </p>
                         <div style={{ marginBottom: 14 }}>
                           <a href={essayFormUrl} target="_blank" rel="noopener noreferrer" className="btn-primary" style={{ display: "inline-flex" }}>
-                            Buka Google Form untuk Unggah Jawaban <ArrowRight size={15} />
+                            Buka Form &amp; Unggah Jawaban <ArrowRight size={15} />
                           </a>
                         </div>
                         <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, marginBottom: 14, cursor: "pointer" }}>
                           <input type="checkbox" checked={examEssayConfirmed} onChange={(e) => setExamEssayConfirmed(e.target.checked)} style={{ width: "auto" }} />
-                          Saya sudah mengisi &amp; mengunggah jawaban esai di Form tersebut.
+                          Saya sudah mengunggah jawaban tulis tangan lewat Form tersebut.
                         </label>
                         <div style={{ display: "flex", gap: 10 }}>
-                          <button className="btn-ghost" onClick={skipExamEssay}>Lewati, Tidak Ada Esai</button>
                           <button className="btn-primary" disabled={!examEssayConfirmed} onClick={submitExamEssayAndFinish}>
                             Selesaikan Ujian <ArrowRight size={15} />
                           </button>
@@ -2111,10 +2106,7 @@ function AppInner() {
                       </>
                     ) : (
                       <>
-                        <p style={{ fontSize: 13.5, color: "var(--muted)", marginBottom: 14 }}>
-                          Gurumu belum mengatur link Google Form untuk unggah jawaban esai. Kalau ujian ini tidak memerlukan jawaban esai tertulis, langsung selesaikan ujian.
-                        </p>
-                        <button className="btn-primary" onClick={skipExamEssay}>Selesaikan Ujian <ArrowRight size={15} /></button>
+                        <div className="err-box"><AlertTriangle size={14} style={{ verticalAlign: -2 }} /> Gurumu belum mengatur link Google Form untuk unggah jawaban tulis tangan. Ujian belum bisa diselesaikan — hubungi gurumu supaya link Form ini segera diatur.</div>
                       </>
                     )}
                   </div>
