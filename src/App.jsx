@@ -580,9 +580,13 @@ function AppInner() {
   // ---------- Form Esai (Google Form milik guru, per sekolah) ----------
   // Menggantikan mekanisme lama (siswa tempel link Drive pribadi). Sekarang siswa mengunggah
   // jawaban esai lewat Google Form yang dibuat & dimiliki guru (file masuk ke Drive guru,
-  // siswa lain tidak bisa melihat file siswa lain).
+  // siswa lain tidak bisa melihat file siswa lain). Guru juga menyimpan link folder Drive
+  // tempat file hasil unggahan itu tersimpan, supaya guru bisa langsung membuka & mengecek
+  // jawaban siswa tanpa perlu membuka Form/spreadsheet respons satu per satu.
   const [essayFormUrl, setEssayFormUrl] = useState("");
   const [essayFormUrlInput, setEssayFormUrlInput] = useState("");
+  const [essayDriveFolderUrl, setEssayDriveFolderUrl] = useState("");
+  const [essayDriveFolderUrlInput, setEssayDriveFolderUrlInput] = useState("");
   const [essayFormSaving, setEssayFormSaving] = useState(false);
   const [essayFormMsg, setEssayFormMsg] = useState("");
 
@@ -1234,16 +1238,24 @@ function AppInner() {
     return /^https:\/\/docs\.google\.com\/forms\//.test(link.trim());
   }
 
+  function isValidDriveFolderLink(link) {
+    return /^https:\/\/drive\.google\.com\//.test(link.trim());
+  }
+
   async function loadEssayFormUrl(sekolahName) {
     const slug = sekolahSlug(sekolahName);
     if (!slug) return;
     try {
       const snap = await getDoc(doc(db, "essayFormSettings", slug));
-      const url = snap.exists() ? snap.data().formUrl || "" : "";
+      const data = snap.exists() ? snap.data() : {};
+      const url = data.formUrl || "";
+      const folderUrl = data.driveFolderUrl || "";
       setEssayFormUrl(url);
       setEssayFormUrlInput(url);
+      setEssayDriveFolderUrl(folderUrl);
+      setEssayDriveFolderUrlInput(folderUrl);
     } catch (e) {
-      // Gagal memuat pengaturan Form -> biarkan kosong, siswa tetap bisa lewati esai
+      // Gagal memuat pengaturan Form -> biarkan kosong
     }
   }
 
@@ -1254,8 +1266,13 @@ function AppInner() {
   async function saveEssayFormUrl() {
     setEssayFormMsg("");
     const url = essayFormUrlInput.trim();
+    const folderUrl = essayDriveFolderUrlInput.trim();
     if (url && !isValidGoogleFormLink(url)) {
-      setEssayFormMsg("Link harus berupa link Google Form yang valid (diawali https://docs.google.com/forms/).");
+      setEssayFormMsg("Link Form harus berupa link Google Form yang valid (diawali https://docs.google.com/forms/).");
+      return;
+    }
+    if (folderUrl && !isValidDriveFolderLink(folderUrl)) {
+      setEssayFormMsg("Link folder harus berupa link Google Drive yang valid (diawali https://drive.google.com/).");
       return;
     }
     const slug = sekolahSlug(profile?.sekolah);
@@ -1265,9 +1282,10 @@ function AppInner() {
     }
     setEssayFormSaving(true);
     try {
-      await setDoc(doc(db, "essayFormSettings", slug), { formUrl: url, sekolah: profile.sekolah, updatedAt: serverTimestamp() }, { merge: true });
+      await setDoc(doc(db, "essayFormSettings", slug), { formUrl: url, driveFolderUrl: folderUrl, sekolah: profile.sekolah, updatedAt: serverTimestamp() }, { merge: true });
       setEssayFormUrl(url);
-      setEssayFormMsg(url ? "Link Google Form tersimpan." : "Link Google Form dihapus.");
+      setEssayDriveFolderUrl(folderUrl);
+      setEssayFormMsg("Pengaturan tersimpan.");
     } catch (e) {
       setEssayFormMsg("Gagal menyimpan. Coba lagi.");
     } finally {
@@ -1572,9 +1590,14 @@ function AppInner() {
             {guruSelectedAttempt.essaySubmitted && (
               <div className="card" style={{ marginBottom: 16, background: "var(--brand-light)", border: "1px solid var(--brand)" }}>
                 <div style={{ fontSize: 12.5, fontWeight: 700, marginBottom: 4, color: "var(--brand-dark)" }}>Jawaban Esai Dikirim via Google Form</div>
-                <div style={{ fontSize: 12, color: "var(--brand-dark)" }}>
-                  Siswa mengonfirmasi sudah mengunggah jawaban esai. Cek isinya di respons Google Form / folder Drive kamu (cari berdasarkan nama siswa &amp; tanggal ujian).
+                <div style={{ fontSize: 12, color: "var(--brand-dark)", marginBottom: essayDriveFolderUrl ? 10 : 0 }}>
+                  Siswa mengonfirmasi sudah mengunggah jawaban esai. Cari file-nya berdasarkan nama siswa &amp; tanggal ujian.
                 </div>
+                {essayDriveFolderUrl && (
+                  <a href={essayDriveFolderUrl} target="_blank" rel="noopener noreferrer" className="btn-primary" style={{ display: "inline-flex" }}>
+                    Buka Folder Drive Jawaban <ArrowRight size={15} />
+                  </a>
+                )}
               </div>
             )}
 
@@ -2457,26 +2480,44 @@ function AppInner() {
                     </p>
 
                     <div className="card" style={{ marginBottom: 18, background: "var(--paper-2)" }}>
-                      <div style={{ fontSize: 12.5, fontWeight: 700, marginBottom: 6 }}>Google Form Unggah Jawaban Esai</div>
+                      <div style={{ fontSize: 12.5, fontWeight: 700, marginBottom: 6 }}>Unggah Jawaban Esai — Google Form &amp; Folder Drive</div>
                       <p style={{ fontSize: 12, color: "var(--muted)", marginBottom: 10 }}>
-                        Buat 1 Google Form dengan pertanyaan tipe "Upload file" di akun Google-mu, lalu tempel link Form-nya di sini. File yang diunggah siswa akan masuk ke Drive-mu sendiri (bukan Drive siswa), dan siswa lain tidak bisa melihat file siswa lain. Link ini berlaku untuk semua siswa di sekolah <b>{profile?.sekolah || "-"}</b>.
+                        Buat 1 Google Form dengan pertanyaan tipe "Upload file" di akun Google-mu. Secara default, Form akan otomatis membuat 1 folder di Drive-mu (biasanya bernama sama dengan nama Form) untuk menampung semua file yang diunggah siswa — file itu masuk ke Drive-mu sendiri, bukan Drive siswa, dan siswa lain tidak bisa saling melihat file. Tempel link Form (untuk dibagikan ke siswa) dan link folder Drive tempat file itu tersimpan (untuk kamu membuka &amp; mengecek jawaban) di bawah ini. Berlaku untuk semua siswa di sekolah <b>{profile?.sekolah || "-"}</b>.
                       </p>
-                      {essayFormMsg && <div style={{ fontSize: 12, color: essayFormMsg.startsWith("Gagal") || essayFormMsg.startsWith("Link harus") || essayFormMsg.startsWith("Lengkapi") ? "var(--rose)" : "#0F7A56", marginBottom: 8 }}>{essayFormMsg}</div>}
-                      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                        <input
-                          type="text"
-                          style={{ flex: 1, minWidth: 220 }}
-                          placeholder="https://docs.google.com/forms/d/e/..../viewform"
-                          value={essayFormUrlInput}
-                          onChange={(e) => { setEssayFormUrlInput(e.target.value); setEssayFormMsg(""); }}
-                        />
-                        <button className="btn-primary" disabled={essayFormSaving} onClick={saveEssayFormUrl}>
-                          {essayFormSaving ? <Loader2 size={14} className="spin" /> : null} Simpan Link Form
-                        </button>
-                        {essayFormUrl && (
-                          <a href={essayFormUrl} target="_blank" rel="noopener noreferrer" className="btn-ghost" style={{ display: "inline-flex" }}>Buka Form</a>
-                        )}
+                      {essayFormMsg && <div style={{ fontSize: 12, color: essayFormMsg.startsWith("Gagal") || essayFormMsg.startsWith("Link Form harus") || essayFormMsg.startsWith("Link folder harus") || essayFormMsg.startsWith("Lengkapi") ? "var(--rose)" : "#0F7A56", marginBottom: 8 }}>{essayFormMsg}</div>}
+                      <div style={{ marginBottom: 8 }}>
+                        <div style={{ fontSize: 11.5, color: "var(--muted)", marginBottom: 4 }}>Link Google Form (dibagikan ke siswa)</div>
+                        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                          <input
+                            type="text"
+                            style={{ flex: 1, minWidth: 220 }}
+                            placeholder="https://docs.google.com/forms/d/e/..../viewform"
+                            value={essayFormUrlInput}
+                            onChange={(e) => { setEssayFormUrlInput(e.target.value); setEssayFormMsg(""); }}
+                          />
+                          {essayFormUrl && (
+                            <a href={essayFormUrl} target="_blank" rel="noopener noreferrer" className="btn-ghost" style={{ display: "inline-flex" }}>Buka Form</a>
+                          )}
+                        </div>
                       </div>
+                      <div style={{ marginBottom: 10 }}>
+                        <div style={{ fontSize: 11.5, color: "var(--muted)", marginBottom: 4 }}>Link Folder Google Drive (tempat jawaban siswa tersimpan, khusus untukmu)</div>
+                        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                          <input
+                            type="text"
+                            style={{ flex: 1, minWidth: 220 }}
+                            placeholder="https://drive.google.com/drive/folders/..."
+                            value={essayDriveFolderUrlInput}
+                            onChange={(e) => { setEssayDriveFolderUrlInput(e.target.value); setEssayFormMsg(""); }}
+                          />
+                          {essayDriveFolderUrl && (
+                            <a href={essayDriveFolderUrl} target="_blank" rel="noopener noreferrer" className="btn-ghost" style={{ display: "inline-flex" }}>Buka Folder Drive</a>
+                          )}
+                        </div>
+                      </div>
+                      <button className="btn-primary" disabled={essayFormSaving} onClick={saveEssayFormUrl}>
+                        {essayFormSaving ? <Loader2 size={14} className="spin" /> : null} Simpan Pengaturan
+                      </button>
                     </div>
 
                     <div style={{ display: "flex", gap: 14, flexWrap: "wrap", marginBottom: 18 }}>
