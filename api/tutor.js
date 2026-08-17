@@ -53,10 +53,12 @@ export default async function handler(req, res) {
     }],
   };
 
-  // "gemini-flash-latest" kadang mengembalikan 404 di beberapa region/akun (alias yang tidak selalu
-  // konsisten dipetakan Google). Pakai nama model stabil sebagai utama, dengan fallback berjenjang
-  // kalau suatu saat Google mengubah/mempensiunkan nama model ini lagi.
-  const MODEL_CANDIDATES = ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-flash-latest"];
+  // gemini-2.5-flash dan gemini-2.0-flash sudah RESMI DIPENSIUNKAN oleh Google (bukan sekadar
+  // error sesaat — konfirmasi dari pesan error 404 "no longer available"). Google mengarahkan ke
+  // gemini-3.6-flash sebagai model workhorse terbaru (masih gratis, generateContent tetap didukung,
+  // tidak wajib pindah ke Interactions API). gemini-flash-latest dipertahankan sebagai fallback
+  // paling akhir karena alias ini otomatis mengikuti model default Google saat ini.
+  const MODEL_CANDIDATES = ["gemini-3.6-flash", "gemini-3.5-flash", "gemini-flash-latest"];
 
   async function callGemini(model) {
     return fetch(
