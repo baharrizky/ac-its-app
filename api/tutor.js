@@ -75,17 +75,22 @@ export default async function handler(req, res) {
 
   try {
     let response = null;
-    for (let i = 0; i < MODEL_CANDIDATES.length; i++) {
-      response = await callGemini(MODEL_CANDIDATES[i]);
-      // 404 berarti nama model ini tidak tersedia — coba model berikutnya di daftar.
-      if (response.status !== 404) break;
-    }
-
-    // Model Gemini kadang sibuk (503) - coba ulang sekali setelah jeda singkat
-    // sebelum menyerah, supaya siswa tidak langsung melihat pesan gagal.
-    if (response.status === 503) {
-      await new Promise((r) => setTimeout(r, 1200));
-      response = await callGemini(MODEL_CANDIDATES[0]);
+    // Untuk tiap model kandidat, coba sampai 2x dengan jeda singkat sebelum pindah ke model
+    // berikutnya. Error 404/503 dari Gemini kadang bersifat transien (masalah sesaat di sisi
+    // Google, bukan berarti model itu benar-benar tidak ada) — retry singkat sering langsung berhasil.
+    outer: for (let i = 0; i < MODEL_CANDIDATES.length; i++) {
+      const model = MODEL_CANDIDATES[i];
+      for (let attempt = 0; attempt < 2; attempt++) {
+        response = await callGemini(model);
+        if (response.ok) break outer;
+        // Catat ke Vercel Logs supaya kalau masih terjadi, tinggal buka tab Logs untuk lihat detailnya
+        // tanpa perlu menebak-nebak lagi.
+        let bodyPreview = "";
+        try { bodyPreview = (await response.clone().text()).slice(0, 300); } catch (e2) {}
+        console.error(`[tutor] Gemini gagal — model=${model} attempt=${attempt + 1} status=${response.status} body=${bodyPreview}`);
+        if (response.status !== 404 && response.status !== 503) break; // error lain (400/403/dll) — tak ada gunanya diulang, langsung pindah/berhenti
+        await new Promise((r) => setTimeout(r, 600));
+      }
     }
 
     if (!response.ok) {
@@ -95,7 +100,7 @@ export default async function handler(req, res) {
       } else if (response.status === 429) {
         friendly = "Tutor AI sedang menerima banyak permintaan. Tunggu sebentar lalu coba lagi ya.";
       } else if (response.status === 404) {
-        friendly = "Model AI tidak ditemukan di server. Hubungi admin aplikasi untuk memperbarui konfigurasi.";
+        friendly = "Model AI sedang tidak terjangkau sesaat. Coba tanya lagi ya — kalau terus terjadi, hubungi admin aplikasi.";
       } else if (response.status >= 500) {
         friendly = "Server AI sedang bermasalah. Coba lagi dalam beberapa saat ya.";
       }
@@ -107,6 +112,7 @@ export default async function handler(req, res) {
     const text = data?.candidates?.[0]?.content?.parts?.map((p) => p.text || "").join("\n").trim();
     res.status(200).json({ reply: text || "Maaf, aku belum bisa menjawab itu. Coba tanya dengan cara lain ya." });
   } catch (e) {
+    console.error("[tutor] Exception:", e);
     res.status(500).json({ error: "Terjadi kesalahan menghubungi server AI." });
   }
 }
