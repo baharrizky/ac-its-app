@@ -7,7 +7,7 @@ import {
 } from "recharts";
 import {
   GraduationCap, LayoutDashboard, BookOpen, PenLine, TrendingUp, User,
-  Lightbulb, CheckCircle2, AlertTriangle, ArrowRight, ArrowLeft, LogOut, Database, Users,
+  Lightbulb, CheckCircle2, XCircle, AlertTriangle, ArrowRight, ArrowLeft, LogOut, Database, Users,
   Mail, Lock, Loader2, RefreshCw, MessageCircle, Sparkles, ClipboardList, Lock as LockIcon,
   ZoomIn, ZoomOut, Send, Clock, Trophy, Award,
 } from "lucide-react";
@@ -449,6 +449,40 @@ function AiTutor({ context, getPageImage, messages, setMessages, onClearHistory 
   );
 }
 
+// ---------- Persistensi posisi halaman terakhir (agar refresh tidak kembali ke Dashboard) ----------
+// Hanya layar "aman" (tidak punya state sementara seperti jawaban ujian yg sedang diisi / diagnosis
+// yg belum tersimpan) yang disimpan & dipulihkan. Layar transien (diagnosis, hint, ujianSoal, dst.)
+// sengaja tidak disimpan supaya tidak memulihkan ke state yang tidak konsisten setelah refresh.
+const NAV_RESTORABLE_SCREENS = new Set([
+  "dashboard", "materiList", "materi", "latihanList", "latihan",
+  "ujian", "progress", "leaderboard", "badges", "profil", "tutorAI",
+  "komikList", "komikChapter",
+]);
+function navStorageKey(uid) {
+  return "acits_lastScreen_" + uid;
+}
+function saveNavState(uid, state) {
+  if (!uid) return;
+  try {
+    localStorage.setItem(navStorageKey(uid), JSON.stringify(state));
+  } catch (e) {}
+}
+function loadNavState(uid) {
+  if (!uid) return null;
+  try {
+    const raw = localStorage.getItem(navStorageKey(uid));
+    return raw ? JSON.parse(raw) : null;
+  } catch (e) {
+    return null;
+  }
+}
+function clearNavState(uid) {
+  if (!uid) return;
+  try {
+    localStorage.removeItem(navStorageKey(uid));
+  } catch (e) {}
+}
+
 function AppInner() {
   // ---------- Auth & profil ----------
   const [authUser, setAuthUser] = useState(null);
@@ -511,6 +545,7 @@ function AppInner() {
   const [misconceptions, setMisconceptions] = useState([]);
   const [poolIndex, setPoolIndex] = useState(EMPTY_POOLIDX);
   const [completedQ, setCompletedQ] = useState({});
+  const [wrongQ, setWrongQ] = useState({}); // {concept: [idx, ...]} — soal yg diselesaikan lewat jalur salah (3x salah berturut-turut), ditandai silang merah
   const [streak, setStreak] = useState(0);
   const [lastActiveDate, setLastActiveDate] = useState(null);
   const streakCheckedRef = useRef(false);
@@ -592,7 +627,17 @@ function AppInner() {
           if (snap.exists()) {
             setProfile(snap.data());
             setMode("app");
-            setScreen("dashboard");
+            // Pulihkan halaman terakhir yang dibuka siswa/guru ini sebelum refresh, supaya tidak
+            // selalu kembali ke Dashboard. Kalau tidak ada riwayat tersimpan (atau layarnya transien),
+            // tetap default ke Dashboard seperti sebelumnya.
+            const saved = loadNavState(u.uid);
+            if (saved && NAV_RESTORABLE_SCREENS.has(saved.screen)) {
+              setScreen(saved.screen);
+              if (saved.activeConcept && CONCEPTS[saved.activeConcept]) setActiveConcept(saved.activeConcept);
+              if (saved.guruTab) setGuruTab(saved.guruTab);
+            } else {
+              setScreen("dashboard");
+            }
           } else {
             await signOut(auth);
           }
@@ -636,6 +681,7 @@ function AppInner() {
           setMisconceptions(d.misconceptions || []);
           setPoolIndex({ ...EMPTY_POOLIDX, ...(d.poolIndex || {}) });
           setCompletedQ(d.completedQ || {});
+          setWrongQ(d.wrongQ || {});
           setTutorMessages(d.tutorMessages || []);
           setExamHistory(d.examHistory || []);
           loadedStreak = d.streak || 0;
@@ -667,8 +713,17 @@ function AppInner() {
 
   useEffect(() => {
     if (!authUser || !profile || profile.role !== "siswa" || !progressLoaded) return;
-    setDoc(doc(db, "progress", authUser.uid), { attempts, misconceptions, poolIndex, completedQ, streak, lastActiveDate, tutorMessages: tutorMessages.slice(-30), examHistory: examHistory.slice(0, 10) }, { merge: true }).catch(() => {});
-  }, [attempts, misconceptions, poolIndex, completedQ, streak, lastActiveDate, tutorMessages, examHistory, authUser, profile, progressLoaded]);
+    setDoc(doc(db, "progress", authUser.uid), { attempts, misconceptions, poolIndex, completedQ, wrongQ, streak, lastActiveDate, tutorMessages: tutorMessages.slice(-30), examHistory: examHistory.slice(0, 10) }, { merge: true }).catch(() => {});
+  }, [attempts, misconceptions, poolIndex, completedQ, wrongQ, streak, lastActiveDate, tutorMessages, examHistory, authUser, profile, progressLoaded]);
+
+  // Simpan posisi halaman terakhir (screen aktif) ke localStorage supaya kalau halaman di-refresh,
+  // siswa/guru tetap berada di halaman yang sama, bukan kembali ke Dashboard. Layar transien
+  // (diagnosis, hint, ujianSoal, dll.) sengaja dilewati — lihat NAV_RESTORABLE_SCREENS.
+  useEffect(() => {
+    if (!authUser || !profile) return;
+    if (!NAV_RESTORABLE_SCREENS.has(screen)) return;
+    saveNavState(authUser.uid, { screen, activeConcept, guruTab });
+  }, [screen, activeConcept, guruTab, authUser, profile]);
 
   // ---------- Kunci laman ujian: mencegah siswa keluar/berpindah selama ujian berlangsung ----------
   useEffect(() => {
@@ -821,6 +876,15 @@ function AppInner() {
     const doneSoFar = completedQ[activeConcept] || [];
     const newDone = doneSoFar.includes(finishedIdx) ? doneSoFar : [...doneSoFar, finishedIdx];
     setCompletedQ((c) => ({ ...c, [activeConcept]: newDone }));
+    // soal ini terselesaikan lewat jalur salah (3x salah berturut-turut) kalau diag.correct eksplisit false —
+    // tandai supaya ditampilkan silang merah, bukan centang hijau, pada peta lompat soal
+    const isWrongPath = diag && diag.correct === false;
+    if (isWrongPath) {
+      setWrongQ((w) => {
+        const cur = w[activeConcept] || [];
+        return cur.includes(finishedIdx) ? w : { ...w, [activeConcept]: [...cur, finishedIdx] };
+      });
+    }
     // cari soal berikutnya yang belum dijawab (urut dari setelah soal ini, lalu putar dari awal)
     let nextIdx = null;
     for (let step = 1; step <= pool.length; step++) {
@@ -958,6 +1022,7 @@ function AppInner() {
   }
 
   async function logout() {
+    clearNavState(authUser?.uid);
     await signOut(auth);
     setScreen("dashboard");
     setGuruStudents([]);
@@ -1805,22 +1870,23 @@ function AppInner() {
                     {(EFFECTIVE_POOL[activeConcept] || []).length > 1 && (
                       <div style={{ marginBottom: 16 }}>
                         <div style={{ fontSize: 11.5, color: "var(--muted)", marginBottom: 7 }}>
-                          Lompat ke soal yang belum dijawab — <span style={{ color: "#0F7A56" }}>hijau = sudah dijawab &amp; terkunci</span>:
+                          Lompat ke soal yang belum dijawab — <span style={{ color: "#0F7A56" }}>hijau = benar &amp; terkunci</span>, <span style={{ color: "var(--rose)" }}>merah = salah 3x &amp; terkunci</span>:
                         </div>
                         <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
                           {EFFECTIVE_POOL[activeConcept].map((_, i) => {
                             const isCurrent = (poolIndex[activeConcept] || 0) % EFFECTIVE_POOL[activeConcept].length === i;
                             const isDone = (completedQ[activeConcept] || []).includes(i);
+                            const isWrong = isDone && (wrongQ[activeConcept] || []).includes(i);
                             return (
                               <button key={i} onClick={() => jumpToQuestion(i)} disabled={isDone}
                                 style={{
                                   width: 30, height: 30, borderRadius: 9, fontSize: 12.5, fontWeight: 700,
-                                  border: isCurrent ? "1.5px solid var(--brand)" : isDone ? "1.5px solid var(--teal)" : "1.5px solid var(--line)",
-                                  background: isCurrent ? "var(--brand)" : isDone ? "var(--teal-light)" : "white",
-                                  color: isCurrent ? "white" : isDone ? "#0F7A56" : "var(--ink)",
+                                  border: isCurrent ? "1.5px solid var(--brand)" : isWrong ? "1.5px solid var(--rose)" : isDone ? "1.5px solid var(--teal)" : "1.5px solid var(--line)",
+                                  background: isCurrent ? "var(--brand)" : isWrong ? "var(--rose-light)" : isDone ? "var(--teal-light)" : "white",
+                                  color: isCurrent ? "white" : isWrong ? "var(--rose)" : isDone ? "#0F7A56" : "var(--ink)",
                                   cursor: isDone ? "not-allowed" : "pointer",
                                 }}>
-                                {isDone ? <CheckCircle2 size={14} /> : i + 1}
+                                {isWrong ? <XCircle size={14} /> : isDone ? <CheckCircle2 size={14} /> : i + 1}
                               </button>
                             );
                           })}
