@@ -574,6 +574,9 @@ function AppInner() {
   const [examLocked, setExamLocked] = useState(false);
   const [examLeaveWarning, setExamLeaveWarning] = useState(false);
   const [examViolations, setExamViolations] = useState(0);
+  const [latihanLocked, setLatihanLocked] = useState(false);
+  const [latihanLeaveWarning, setLatihanLeaveWarning] = useState(false);
+  const [latihanViolations, setLatihanViolations] = useState(0);
   const EXAM_LENGTH = 15;
   const [examEssayConfirmed, setExamEssayConfirmed] = useState(false);
 
@@ -737,29 +740,24 @@ function AppInner() {
     saveNavState(authUser.uid, { screen, activeConcept, guruTab });
   }, [screen, activeConcept, guruTab, authUser, profile]);
 
-  // ---------- Kunci laman ujian: mencegah siswa keluar/berpindah selama ujian berlangsung ----------
+  // ---------- Kunci laman ujian & latihan: mencegah siswa keluar/berpindah selama pengerjaan berlangsung ----------
   useEffect(() => {
-    if (!examLocked) return;
+    const locked = examLocked || latihanLocked;
+    if (!locked) return;
+    const markViolation = () => { if (examLocked) setExamViolations((v) => v + 1); else setLatihanViolations((v) => v + 1); };
+    const showWarning = () => { if (examLocked) setExamLeaveWarning(true); else setLatihanLeaveWarning(true); };
 
     const handleBeforeUnload = (e) => {
       e.preventDefault();
-      e.returnValue = "Ujian sedang berlangsung. Yakin ingin meninggalkan halaman ini?";
+      e.returnValue = examLocked ? "Ujian sedang berlangsung. Yakin ingin meninggalkan halaman ini?" : "Latihan sedang berlangsung. Yakin ingin meninggalkan halaman ini?";
       return e.returnValue;
     };
     const handleVisibility = () => {
-      if (document.hidden) {
-        setExamViolations((v) => v + 1);
-        setExamLeaveWarning(true);
-      }
+      if (document.hidden) { markViolation(); showWarning(); }
     };
-    const handleBlur = () => {
-      setExamLeaveWarning(true);
-    };
+    const handleBlur = () => { showWarning(); };
     const handleFullscreenChange = () => {
-      if (!document.fullscreenElement) {
-        setExamViolations((v) => v + 1);
-        setExamLeaveWarning(true);
-      }
+      if (!document.fullscreenElement) { markViolation(); showWarning(); }
     };
     const handleContextMenu = (e) => e.preventDefault();
     const handleKeyDown = (e) => {
@@ -773,11 +771,11 @@ function AppInner() {
         e.preventDefault();
       }
     };
-    // Trik agar tombol "kembali" browser tidak langsung membawa siswa keluar dari halaman ujian
+    // Trik agar tombol "kembali" browser tidak langsung membawa siswa keluar dari halaman ujian/latihan
     window.history.pushState(null, "", window.location.href);
     const handlePopState = () => {
       window.history.pushState(null, "", window.location.href);
-      setExamLeaveWarning(true);
+      showWarning();
     };
 
     window.addEventListener("beforeunload", handleBeforeUnload);
@@ -797,10 +795,18 @@ function AppInner() {
       document.removeEventListener("keydown", handleKeyDown);
       window.removeEventListener("popstate", handlePopState);
     };
-  }, [examLocked]);
+  }, [examLocked, latihanLocked]);
 
   function resumeExamAfterWarning() {
     setExamLeaveWarning(false);
+    try {
+      const el = document.documentElement;
+      if (!document.fullscreenElement && el.requestFullscreen) el.requestFullscreen().catch(() => {});
+    } catch (e) {}
+  }
+
+  function resumeLatihanAfterWarning() {
+    setLatihanLeaveWarning(false);
     try {
       const el = document.documentElement;
       if (!document.fullscreenElement && el.requestFullscreen) el.requestFullscreen().catch(() => {});
@@ -831,6 +837,16 @@ function AppInner() {
     setConsecWrong(0);
     setHintTier(0);
     setScreen("latihan");
+    const pool = EFFECTIVE_POOL[next] || [];
+    const doneCount = (completedQ[next] || []).length;
+    if (pool.length > 0 && doneCount < pool.length) {
+      setLatihanLocked(true);
+      setLatihanLeaveWarning(false);
+      try {
+        const el = document.documentElement;
+        if (el.requestFullscreen) el.requestFullscreen().catch(() => {});
+      } catch (e) {}
+    }
   }
 
   function openLatihanFor(concept) {
@@ -840,6 +856,16 @@ function AppInner() {
     setConsecWrong(0);
     setHintTier(0);
     setScreen("latihan");
+    const pool = EFFECTIVE_POOL[concept] || [];
+    const doneCount = (completedQ[concept] || []).length;
+    if (pool.length > 0 && doneCount < pool.length) {
+      setLatihanLocked(true);
+      setLatihanLeaveWarning(false);
+      try {
+        const el = document.documentElement;
+        if (el.requestFullscreen) el.requestFullscreen().catch(() => {});
+      } catch (e) {}
+    }
   }
 
   function currentQ() {
@@ -909,6 +935,14 @@ function AppInner() {
     setConsecWrong(0);
     setHintTier(0);
     setScreen("latihan");
+    if (nextIdx === null) {
+      // seluruh soal pada konsep ini sudah terjawab & terkunci — lepaskan kunci sesi latihan
+      setLatihanLocked(false);
+      setLatihanLeaveWarning(false);
+      try {
+        if (document.fullscreenElement && document.exitFullscreen) document.exitFullscreen().catch(() => {});
+      } catch (e) {}
+    }
   }
 
   function goToHint() {
@@ -1544,19 +1578,19 @@ function AppInner() {
     <div className="wrap">
       <GlobalStyle />
 
-      {examLocked && examLeaveWarning && (
+      {((examLocked && examLeaveWarning) || (latihanLocked && latihanLeaveWarning)) && (
         <div style={{
           position: "fixed", inset: 0, background: "rgba(30,27,51,0.92)", zIndex: 9999,
           display: "flex", alignItems: "center", justifyContent: "center", padding: 20,
         }}>
           <div className="card" style={{ maxWidth: 380, textAlign: "center" }}>
             <AlertTriangle size={30} style={{ color: "var(--rose)", marginBottom: 10 }} />
-            <h2 className="disp" style={{ fontSize: 17, marginBottom: 8 }}>Ujian Sedang Berlangsung</h2>
+            <h2 className="disp" style={{ fontSize: 17, marginBottom: 8 }}>{examLocked ? "Ujian Sedang Berlangsung" : "Latihan Sedang Berlangsung"}</h2>
             <p style={{ fontSize: 13, color: "var(--muted)", marginBottom: 16 }}>
-              Terdeteksi kamu mencoba meninggalkan atau berpindah dari laman ujian. Laman ujian terkunci sampai kamu menyelesaikan seluruh soal. Klik tombol di bawah untuk kembali mengerjakan.
+              Terdeteksi kamu mencoba meninggalkan atau berpindah dari laman {examLocked ? "ujian" : "latihan"}. Laman ini terkunci sampai kamu menyelesaikan seluruh soal. Klik tombol di bawah untuk kembali mengerjakan.
             </p>
-            <button className="btn-primary" style={{ width: "100%", justifyContent: "center" }} onClick={resumeExamAfterWarning}>
-              Kembali ke Ujian <ArrowRight size={15} />
+            <button className="btn-primary" style={{ width: "100%", justifyContent: "center" }} onClick={examLocked ? resumeExamAfterWarning : resumeLatihanAfterWarning}>
+              Kembali Mengerjakan <ArrowRight size={15} />
             </button>
           </div>
         </div>
@@ -1713,7 +1747,7 @@ function AppInner() {
 
       {mode === "app" && profile && (
         <div className="app-shell">
-          <aside className="sidebar" style={examLocked ? { pointerEvents: "none", opacity: 0.45 } : undefined}>
+          <aside className="sidebar" style={(examLocked || latihanLocked) ? { pointerEvents: "none", opacity: 0.45 } : undefined}>
             <div className="sidebar-brand brand"><GraduationCap size={20} /> AC-ITS</div>
 
             {profile.role === "siswa" && (
@@ -1755,7 +1789,7 @@ function AppInner() {
           </aside>
 
           {profile.role === "siswa" && (
-            <nav className="floating-nav" style={examLocked ? { pointerEvents: "none", opacity: 0.45 } : undefined}>
+            <nav className="floating-nav" style={(examLocked || latihanLocked) ? { pointerEvents: "none", opacity: 0.45 } : undefined}>
               <button className={"sidebar-navbtn" + (screen === "dashboard" ? " active" : "")} onClick={() => setScreen("dashboard")}><LayoutDashboard size={17} />Home</button>
               <button className={"sidebar-navbtn" + (screen === "tutorAI" ? " active" : "")} onClick={() => { setTutorFocusConcept(null); setScreen("tutorAI"); }}><MessageCircle size={17} />Tutor</button>
               <button className={"sidebar-navbtn" + (screen === "materiList" || screen === "materi" ? " active" : "")} onClick={() => setScreen("materiList")}><BookOpen size={17} />Materi</button>
@@ -1917,7 +1951,7 @@ function AppInner() {
                     {CONCEPT_ORDER.map((c, i) => {
                       const st = statuses[c];
                       return (
-                        <button key={c} onClick={() => { setActiveConcept(c); setSelected(null); setDiag(null); setConsecWrong(0); setHintTier(0); setRedirectNote(null); setScreen("latihan"); }}
+                        <button key={c} onClick={() => { setRedirectNote(null); openLatihanFor(c); }}
                           style={{ display: "flex", alignItems: "center", gap: 14, width: "100%", textAlign: "left", padding: 14, borderRadius: 14, border: "1.5px solid var(--line)", marginBottom: 10, background: "white" }}>
                           <div style={{ width: 34, height: 34, borderRadius: 10, background: "var(--brand-light)", color: "var(--brand-dark)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, fontWeight: 700, fontSize: 12.5 }}>{i + 1}</div>
                           <div style={{ flex: 1 }}>
