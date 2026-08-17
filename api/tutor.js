@@ -46,14 +46,17 @@ export default async function handler(req, res) {
         "(4) Hanya kalau siswa sudah mencoba membaca ulang dan masih benar-benar bingung setelah 2-3 kali bertanya di topik yang sama, " +
         "baru boleh memberi penjelasan singkat sebagai upaya terakhir — dan tetap jangan langsung berikan jawaban akhir dari soal latihan manapun. " +
         "Jawab dalam Bahasa Indonesia, singkat (maksimal beberapa kalimat), dengan nada suportif dan tidak menggurui. " +
-        "PENTING soal format angka: tulis pangkat dengan tanda ^ (contoh: 2^3, a^(m/n)), tulis akar dengan √( ) (contoh: √(16), ³√(8)), " +
-        "dan pecahan sederhana cukup ditulis biasa seperti 1/2 — supaya bisa dirender rapi oleh sistem. " +
+        "PENTING soal format angka: tulis SEMUA notasi matematika dalam LaTeX yang diapit tanda dolar, contoh: " +
+        "pangkat ditulis $2^3$ atau $a^{m/n}$, akar ditulis $\\sqrt{16}$ atau $\\sqrt[3]{8}$, pecahan ditulis " +
+        "$\\dfrac{1}{2}$, perkalian ditulis $\\times$ — supaya bisa dirender rapi oleh sistem. " +
         "Jangan gunakan format markdown seperti tanda bintang ganda (**) untuk cetak tebal atau simbol markdown lainnya.",
     }],
   };
 
-  // Urutan model cadangan: kalau model pertama sibuk/gagal, otomatis coba model berikutnya.
-  const MODELS = ["gemini-flash-latest", "gemini-2.5-flash", "gemini-2.0-flash"];
+  // "gemini-flash-latest" kadang mengembalikan 404 di beberapa region/akun (alias yang tidak selalu
+  // konsisten dipetakan Google). Pakai nama model stabil sebagai utama, dengan fallback berjenjang
+  // kalau suatu saat Google mengubah/mempensiunkan nama model ini lagi.
+  const MODEL_CANDIDATES = ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-flash-latest"];
 
   async function callGemini(model) {
     return fetch(
@@ -72,45 +75,31 @@ export default async function handler(req, res) {
 
   try {
     let response = null;
-    let lastErrStatus = null;
-    let lastErrText = "";
-    let usedModel = null;
-
-    for (const model of MODELS) {
-      try {
-        response = await callGemini(model);
-      } catch (e) {
-        continue; // gagal koneksi ke model ini -> langsung coba model berikutnya
-      }
-      if (response.ok) { usedModel = model; break; }
-
-      lastErrStatus = response.status;
-      // Kalau model sedang sibuk/limit, kasih satu kali kesempatan retry cepat pada model YANG SAMA
-      // sebelum pindah ke model cadangan berikutnya (kadang cukup untuk lolos).
-      if (response.status === 503 || response.status === 429) {
-        await new Promise((r) => setTimeout(r, 600));
-        try {
-          response = await callGemini(model);
-          if (response.ok) { usedModel = model; break; }
-          lastErrStatus = response.status;
-        } catch (e) {}
-      }
-      lastErrText = await response.text().catch(() => "");
-      // lanjut coba model cadangan berikutnya
+    for (let i = 0; i < MODEL_CANDIDATES.length; i++) {
+      response = await callGemini(MODEL_CANDIDATES[i]);
+      // 404 berarti nama model ini tidak tersedia — coba model berikutnya di daftar.
+      if (response.status !== 404) break;
     }
 
-    if (!usedModel) {
-      if (lastErrStatus === 503) {
-        res.status(200).json({ reply: "Maaf, semua server AI sedang sibuk banget nih (lagi banyak yang pakai). Coba tanya lagi sebentar lagi ya 🙏" });
-        return;
+    // Model Gemini kadang sibuk (503) - coba ulang sekali setelah jeda singkat
+    // sebelum menyerah, supaya siswa tidak langsung melihat pesan gagal.
+    if (response.status === 503) {
+      await new Promise((r) => setTimeout(r, 1200));
+      response = await callGemini(MODEL_CANDIDATES[0]);
+    }
+
+    if (!response.ok) {
+      let friendly = "Tutor AI sedang gangguan. Coba tanya lagi sebentar lagi ya.";
+      if (response.status === 503) {
+        friendly = "Tutor AI sedang ramai dipakai. Coba kirim pertanyaanmu lagi dalam beberapa saat ya.";
+      } else if (response.status === 429) {
+        friendly = "Tutor AI sedang menerima banyak permintaan. Tunggu sebentar lalu coba lagi ya.";
+      } else if (response.status === 404) {
+        friendly = "Model AI tidak ditemukan di server. Hubungi admin aplikasi untuk memperbarui konfigurasi.";
+      } else if (response.status >= 500) {
+        friendly = "Server AI sedang bermasalah. Coba lagi dalam beberapa saat ya.";
       }
-      if (lastErrStatus === 429) {
-        res.status(200).json({ reply: "Wah, kuota AI Tutor untuk saat ini sudah penuh. Coba lagi beberapa saat lagi ya." });
-        return;
-      }
-      res.status(200).json({ reply: "Maaf, ada gangguan saat menghubungi AI. Coba tanya lagi ya. (kode: " + lastErrStatus + ")" });
-      // eslint-disable-next-line no-console
-      console.error("Gemini error semua model:", lastErrStatus, lastErrText.slice(0, 300));
+      res.status(response.status).json({ error: friendly });
       return;
     }
 
@@ -118,6 +107,6 @@ export default async function handler(req, res) {
     const text = data?.candidates?.[0]?.content?.parts?.map((p) => p.text || "").join("\n").trim();
     res.status(200).json({ reply: text || "Maaf, aku belum bisa menjawab itu. Coba tanya dengan cara lain ya." });
   } catch (e) {
-    res.status(200).json({ reply: "Maaf, koneksi ke AI Tutor sedang bermasalah. Coba lagi sebentar ya." });
+    res.status(500).json({ error: "Terjadi kesalahan menghubungi server AI." });
   }
 }
