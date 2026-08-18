@@ -100,15 +100,15 @@ const MATERI = {
   E11: {
     formula: [
       "\\begin{gathered}\\footnotesize\\text{BENTUK DASAR}\\\\[4pt] a^{f(x)} = a^{P}\\ (a>0,\\ a\\neq1,\\ P\\text{ konstanta}) \\;\\Rightarrow\\; f(x)=P\\end{gathered}",
-      "a^{f(x)} = a^{g(x)}\\ (a>0,\\ a\\neq1) \\;\\Rightarrow\\; f(x)=g(x)",
-      "a^{h(x)} = b^{h(x)}\\ (a,b>0,\\ a\\neq b) \\;\\Rightarrow\\; h(x)=0",
-      "P\\cdot(a^{x})^{2} + Q\\cdot a^{x} + R = 0 \\;\\xrightarrow{u=a^{x}}\\; Pu^{2}+Qu+R=0",
+      "a^{f(x)} = a^{g(x)}\\ (a>0, a\u22601)  §  f(x)=g(x)",
+      "a^{h(x)} = b^{h(x)}\\ (a,b>0, a\u2260b)  §  h(x)=0",
+      "P\\cdot(a^{x})^{2} + Q\\cdot a^{x} + R = 0  §  u=a^{x}  §  Pu^{2}+Qu+R=0",
     ],
     penjelasan: "Bentuk paling dasar: kalau basis kedua ruas sudah sama dan pangkat di ruas kanan sudah berupa bilangan konstan $P$ (bukan fungsi), maka pangkat di ruas kiri langsung disamakan dengan konstanta itu: $f(x)=P$. Ini kasus khusus dari aturan umum — kalau basis kedua ruas SUDAH sama (atau bisa disamakan dengan sifat eksponen), langsung samakan pangkatnya: $f(x)=g(x)$. Kalau basisnya berbeda tapi pangkatnya sudah sama persis di kedua ruas, satu-satunya cara persamaan itu benar adalah pangkatnya $=0$ (karena $a^0=b^0=1$). Untuk bentuk yang menyerupai persamaan kuadrat (ada $a^{2x}$ dan $a^x$ dalam satu persamaan), misalkan $u=a^x$ dulu supaya jadi $Pu^2+Qu+R=0$, selesaikan $u$ dengan pemfaktoran/rumus ABC, baru kembalikan $a^x=u$ untuk mencari $x$ (nilai $u$ harus positif karena $a^x>0$).",
     contoh: [
-      "3^{5x-9}=3^{2x+3} \\;\\to\\; 5x-9=2x+3 \\;\\to\\; 3x=12 \\;\\to\\; x=4",
-      "8^{x+2}=32^{x-1} \\;\\to\\; (2^3)^{x+2}=(2^5)^{x-1} \\;\\to\\; 3x+6=5x-5 \\;\\to\\; x=\\tfrac{11}{2}",
-      "4^{x}-5\\cdot2^{x}+4=0 \\;\\xrightarrow{u=2^{x}}\\; u^2-5u+4=0 \\;\\to\\;(u-1)(u-4)=0 \\;\\to\\; u=1\\text{ atau }u=4 \\;\\to\\; x=0\\text{ atau }x=2",
+      "3^{5x-9}=3^{2x+3}  §  5x-9=2x+3  §  3x=12  §  x=4",
+      "8^{x+2}=32^{x-1}  §  (2^3)^{x+2}=(2^5)^{x-1}  §  3x+6=5x-5  §  x=\tfrac{11}{2}",
+      "4^{x}-5\\cdot2^{x}+4=0  §  u=2^{x}  §  u^2-5u+4=0  §  (u-1)(u-4)=0  §  u=1\\text{ atau }u=4  §  x=0\\text{ atau }x=2",
     ],
   },
 };
@@ -298,38 +298,15 @@ function formatDuration(sec) {
 // ---------------- Komponen: MathText — merender notasi LaTeX asli pakai KaTeX ----------------
 function normalizeDisplayMath(tex) {
   const raw = String(tex || '').trim();
-  // Formula yang sudah memiliki struktur multi-baris dari penulis materi
-  // tidak disentuh agar layout aslinya tetap terjaga.
   if (/\\begin\{(aligned|alignedat|gathered|array|cases|split)\}/.test(raw)) return raw;
 
-  // Untuk rantai langkah yang panjang, pecah berdasarkan operator transisi
-  // tingkat atas. Ini mencegah satu persamaan panjang dipaksa menjadi satu baris.
-  const tokenRe = /(\\;?\\xrightarrow\{[^{}]*\}\\;?|\\;?\\Rightarrow\\;?|\\;?\\to\\;?)/g;
-  const parts = raw.split(tokenRe).filter(Boolean);
-  const hasTransition = parts.length > 1 && parts.some(p => /\\(?:xrightarrow|Rightarrow|to)/.test(p));
+  // Rantai langkah panjang: pecah menjadi baris terpisah.
+  // Gunakan simbol Unicode ⇒ agar tidak bergantung pada command \Rightarrow/\quad.
+  const parts = raw.split(/\s*(?:\\Rightarrow|\\to|→|⇒|§)\s*/).filter(Boolean);
+  const hasTransition = parts.length > 1 && /(?:\\Rightarrow|\\to|→|⇒|§)/.test(raw);
   if (!hasTransition) return raw;
 
-  const rows = [];
-  let current = '';
-  let pendingArrow = '';
-  for (const part of parts) {
-    if (/^\\;?\\xrightarrow\{[^{}]*\}\\;?$/.test(part) || /^\\;?\\Rightarrow\\;?$/.test(part) || /^\\;?\\to\\;?$/.test(part)) {
-      if (current.trim()) {
-        rows.push({ arrow: pendingArrow, expr: current.trim() });
-        current = '';
-      }
-      pendingArrow = part.trim();
-    } else {
-      current += part;
-    }
-  }
-  if (current.trim()) rows.push({ arrow: pendingArrow, expr: current.trim() });
-  if (rows.length < 2) return raw;
-
-  return `\\begin{aligned}${rows.map((r, i) => {
-    const arrow = i === 0 ? '' : `${r.arrow}\\quad`;
-    return `${arrow}{}${r.expr}`;
-  }).join('\\\\[5pt]') }\\end{aligned}`;
+  return `\\begin{gathered}${parts.map((part, i) => `${i === 0 ? '' : '⇒\u00a0'}${part.trim()}`).join('\\[4pt]')}\\end{gathered}`;
 }
 
 // ---------------- Komponen: MathText — merender notasi LaTeX asli pakai KaTeX ----------------
@@ -1985,10 +1962,9 @@ function AppInner() {
                       <>
                         <div className="basic-formula-box">
                           <div className="basic-label">BENTUK DASAR</div>
-                          <MathText text="a^{f(x)} = a^{P} \\quad (a>0,\\ a\\neq1,\\ P\\text{ konstanta})" />
-                          <div style={{ marginTop: 8 }}>
-                            <MathText text="\\Rightarrow\\quad{} f(x)=P" />
-                          </div>
+                          <MathText text="a^{f(x)} = a^{P}" />
+                          <div className="basic-condition"><MathText text="(a>0,\\ a\\neq1,\\ P\\text{ konstanta})" /></div>
+                          <div className="basic-result"><MathText text="⇒ f(x)=P" /></div>
                         </div>
                         <div className="qtext">
                           {EFFECTIVE_MATERI[activeConcept].formula.slice(1).map((f, i) => <MathText key={i} text={f} />)}
@@ -2865,20 +2841,24 @@ function GlobalStyle() {
         .stat-chip { background:white; border:1px solid var(--line); border-radius:14px; padding:10px 14px; display:flex; align-items:center; gap:8px; font-size:13px; font-weight:600; }
         .opt { display:block; width:100%; text-align:left; padding:13px 14px; border-radius:12px; border:1.5px solid var(--line); background:var(--paper-2); margin-bottom:9px; font-size:14.5px; font-family:'IBM Plex Mono'; transition:border-color .15s; }
         .opt.picked { border-color:var(--brand); background:var(--brand-light); }
-        .qtext { font-family:'STIX Two Math','Cambria Math',serif; font-size:clamp(16px,4.2vw,22px); margin:14px 0 20px; padding:18px 20px; background:var(--paper-2); border-radius:14px; border:1px solid var(--line); text-align:center; min-width:0; }
+        .qtext { font-family:'STIX Two Math','Cambria Math',serif; font-size:clamp(13px,2.4vw,16px); margin:14px 0 20px; padding:18px 20px; background:var(--paper-2); border-radius:14px; border:1px solid var(--line); text-align:center; min-width:0; }
         .qtext .katex-display { margin:8px 0; padding:2px 0; }
         .qtext .katex-display:not(:last-child) { margin-bottom:18px; }
-        .math-box { font-family:'STIX Two Math','Cambria Math',serif; font-size:clamp(14px,3.6vw,19px); padding:14px 16px; background:var(--paper-2); border-radius:12px; border:1px solid var(--line); margin-bottom:8px; text-align:center; min-width:0; }
+        .math-box { font-family:'STIX Two Math','Cambria Math',serif; font-size:clamp(12px,2.1vw,14.5px); padding:14px 16px; background:var(--paper-2); border-radius:12px; border:1px solid var(--line); margin-bottom:8px; text-align:center; min-width:0; }
         .math-box .katex-display { margin:0; padding:2px 0; }
         .math-block-wrap { width:100%; max-width:100%; display:flex; justify-content:center; align-items:flex-start; min-width:0; box-sizing:border-box; }
         .math-block { display:block; max-width:100%; min-width:0; }
         .math-block .katex-display { margin:0; }
         .math-block .katex-display > .katex { max-width:none; }
+        .math-block .katex { font-size:1em; }
         .math-block .katex { max-width:none; }
         .math-inline { max-width:100%; }
-        .basic-formula-box { background:var(--paper-2); border:1px solid var(--line); border-radius:14px; padding:18px 16px; margin:14px 0 10px; text-align:center; }
+        .basic-formula-box { background:var(--paper-2); border:1px solid var(--line); border-radius:14px; padding:16px 16px; margin:14px 0 10px; text-align:center; }
         .basic-formula-box .basic-label { font-family:Inter,sans-serif; font-size:11px; font-weight:800; letter-spacing:.08em; color:var(--muted); margin-bottom:10px; }
         .basic-formula-box .math-block-wrap { margin:0; }
+        .basic-formula-box .math-block .katex { font-size:1em; }
+        .basic-condition { margin-top:3px; font-size:.82em; }
+        .basic-result { margin-top:4px; font-size:.88em; }
         .math-sup { vertical-align:super; font-size:0.68em; line-height:0; }
         .math-radical { display:inline-flex; align-items:flex-start; white-space:nowrap; }
         .math-radical-idx { font-size:0.58em; margin-right:-3px; margin-top:-3px; }
