@@ -328,7 +328,7 @@ function normalizeDisplayMath(tex) {
 
   return `\\begin{aligned}${rows.map((r, i) => {
     const arrow = i === 0 ? '' : `${r.arrow}\\quad`;
-    return `${arrow}${r.expr}`;
+    return `${arrow}{}${r.expr}`;
   }).join('\\\\[5pt]') }\\end{aligned}`;
 }
 
@@ -1987,7 +1987,7 @@ function AppInner() {
                           <div className="basic-label">BENTUK DASAR</div>
                           <MathText text="a^{f(x)} = a^{P} \\quad (a>0,\\ a\\neq1,\\ P\\text{ konstanta})" />
                           <div style={{ marginTop: 8 }}>
-                            <MathText text="\\Rightarrow\\quad f(x)=P" />
+                            <MathText text="\\Rightarrow\\quad{} f(x)=P" />
                           </div>
                         </div>
                         <div className="qtext">
@@ -2872,9 +2872,9 @@ function GlobalStyle() {
         .math-box .katex-display { margin:0; padding:2px 0; }
         .math-block-wrap { width:100%; max-width:100%; display:flex; justify-content:center; align-items:flex-start; min-width:0; box-sizing:border-box; }
         .math-block { display:block; max-width:100%; min-width:0; }
-        .math-block .katex-display { margin:0; max-width:100%; }
-        .math-block .katex-display > .katex { max-width:100%; }
-        .math-block .katex { max-width:100%; }
+        .math-block .katex-display { margin:0; }
+        .math-block .katex-display > .katex { max-width:none; }
+        .math-block .katex { max-width:none; }
         .math-inline { max-width:100%; }
         .basic-formula-box { background:var(--paper-2); border:1px solid var(--line); border-radius:14px; padding:18px 16px; margin:14px 0 10px; text-align:center; }
         .basic-formula-box .basic-label { font-family:Inter,sans-serif; font-size:11px; font-weight:800; letter-spacing:.08em; color:var(--muted); margin-bottom:10px; }
