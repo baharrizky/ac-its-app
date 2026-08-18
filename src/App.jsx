@@ -99,7 +99,7 @@ const MATERI = {
   },
   E11: {
     formula: [
-      "a^{f(x)} = a^{g}",
+      "a^{f(x)} = a^{g}\\",
       "a^{f(x)} = a^{g(x)}\\ (a>0,\\ a\\neq1) \\;\\Rightarrow\\; f(x)=g(x)",
       "a^{h(x)} = b^{h(x)}\\ (a,b>0,\\ a\\neq b) \\;\\Rightarrow\\; h(x)=0",
       "P\\cdot(a^{x})^{2} + Q\\cdot a^{x} + R = 0 \\;\\xrightarrow{u=a^{x}}\\; Pu^{2}+Qu+R=0",
