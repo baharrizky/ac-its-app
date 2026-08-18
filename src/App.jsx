@@ -297,13 +297,57 @@ function formatDuration(sec) {
 
 // ---------------- Komponen: MathText — merender notasi LaTeX asli pakai KaTeX ----------------
 function KaTeXSpan({ tex, block = false }) {
+  const wrapRef = useRef(null);
+  const [scale, setScale] = useState(1);
+
   let html;
   try {
     html = katex.renderToString(tex, { throwOnError: false, displayMode: block });
   } catch (e) {
     html = tex;
   }
-  return <span className={block ? "math-block" : "math-inline"} dangerouslySetInnerHTML={{ __html: html }} />;
+
+  // Rumus blok dibuat responsif: jika lebih lebar dari kartu, KaTeX akan
+  // diperkecil secara proporsional sampai muat. Jadi siswa tidak perlu
+  // menggeser horizontal untuk membaca persamaan.
+  useEffect(() => {
+    if (!block) return;
+    const wrap = wrapRef.current;
+    if (!wrap) return;
+
+    const fit = () => {
+      const katexEl = wrap.querySelector('.katex');
+      if (!katexEl) return;
+      const available = Math.max(80, wrap.clientWidth - 8);
+      const naturalWidth = katexEl.getBoundingClientRect().width;
+      const nextScale = naturalWidth > available ? Math.max(0.55, available / naturalWidth) : 1;
+      setScale(prev => Math.abs(prev - nextScale) > 0.01 ? nextScale : prev);
+    };
+
+    const raf = requestAnimationFrame(fit);
+    const ro = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(fit) : null;
+    if (ro) ro.observe(wrap);
+    window.addEventListener('resize', fit);
+    return () => {
+      cancelAnimationFrame(raf);
+      ro?.disconnect();
+      window.removeEventListener('resize', fit);
+    };
+  }, [tex, block]);
+
+  if (!block) {
+    return <span className="math-inline" dangerouslySetInnerHTML={{ __html: html }} />;
+  }
+
+  return (
+    <div ref={wrapRef} className="math-block-wrap" aria-label="Persamaan matematika">
+      <span
+        className="math-block"
+        style={{ transform: `scale(${scale})` }}
+        dangerouslySetInnerHTML={{ __html: html }}
+      />
+    </div>
+  );
 }
 function MathText({ text }) {
   if (text === null || text === undefined || text === "") return null;
@@ -2805,11 +2849,15 @@ function GlobalStyle() {
         .stat-chip { background:white; border:1px solid var(--line); border-radius:14px; padding:10px 14px; display:flex; align-items:center; gap:8px; font-size:13px; font-weight:600; }
         .opt { display:block; width:100%; text-align:left; padding:13px 14px; border-radius:12px; border:1.5px solid var(--line); background:var(--paper-2); margin-bottom:9px; font-size:14.5px; font-family:'IBM Plex Mono'; transition:border-color .15s; }
         .opt.picked { border-color:var(--brand); background:var(--brand-light); }
-        .qtext { font-family:'STIX Two Math','Cambria Math',serif; font-size:clamp(16px,4.2vw,22px); margin:14px 0 20px; padding:18px 20px; background:var(--paper-2); border-radius:14px; border:1px solid var(--line); text-align:center; overflow-x:auto; -webkit-overflow-scrolling:touch; }
-        .qtext .katex-display { margin:8px 0; overflow-x:auto; overflow-y:hidden; padding:2px 0; }
+        .qtext { font-family:'STIX Two Math','Cambria Math',serif; font-size:clamp(16px,4.2vw,22px); margin:14px 0 20px; padding:18px 20px; background:var(--paper-2); border-radius:14px; border:1px solid var(--line); text-align:center; overflow:hidden; min-width:0; }
+        .qtext .katex-display { margin:8px 0; overflow:visible; padding:2px 0; }
         .qtext .katex-display:not(:last-child) { margin-bottom:18px; }
-        .math-box { font-family:'STIX Two Math','Cambria Math',serif; font-size:clamp(14px,3.6vw,19px); padding:14px 16px; background:var(--paper-2); border-radius:12px; border:1px solid var(--line); margin-bottom:8px; text-align:center; overflow-x:auto; -webkit-overflow-scrolling:touch; }
-        .math-box .katex-display { margin:0; overflow-x:auto; overflow-y:hidden; padding:2px 0; }
+        .math-box { font-family:'STIX Two Math','Cambria Math',serif; font-size:clamp(14px,3.6vw,19px); padding:14px 16px; background:var(--paper-2); border-radius:12px; border:1px solid var(--line); margin-bottom:8px; text-align:center; overflow:hidden; min-width:0; }
+        .math-box .katex-display { margin:0; overflow:visible; padding:2px 0; }
+        .math-block-wrap { width:100%; max-width:100%; overflow:hidden; display:flex; justify-content:center; align-items:flex-start; min-width:0; }
+        .math-block { display:block; max-width:none; flex:0 0 auto; transform-origin:center top; }
+        .math-block .katex-display { white-space:normal; }
+        .math-inline { max-width:100%; }
         .math-sup { vertical-align:super; font-size:0.68em; line-height:0; }
         .math-radical { display:inline-flex; align-items:flex-start; white-space:nowrap; }
         .math-radical-idx { font-size:0.58em; margin-right:-3px; margin-top:-3px; }
