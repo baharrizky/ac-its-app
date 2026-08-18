@@ -99,18 +99,18 @@ const MATERI = {
   },
   E11: {
     formula: [
-      "\\begin{gathered}\\footnotesize\\text{BENTUK DASAR}\\\\[4pt] a^{f(x)} = a^{P}\\ (a>0,\\ a\\neq1,\\ P\\text{ konstanta}) \\;\\Rightarrow\\; f(x)=P\\end{gathered}",
-      "a^{f(x)} = a^{g(x)}\\ (a>0, a\u22601)  §  f(x)=g(x)",
-      "a^{h(x)} = b^{h(x)}\\ (a,b>0, a\u2260b)  §  h(x)=0",
-      "P\\cdot(a^{x})^{2} + Q\\cdot a^{x} + R = 0  §  u=a^{x}  §  Pu^{2}+Qu+R=0",
+      "a^{f(x)} = a^{P}",
+      "a^{f(x)} = a^{g(x)} (a>0, a\\ne1) ⇒ f(x)=g(x)",
+      "a^{h(x)} = b^{h(x)} (a,b>0, a\\ne b) ⇒ h(x)=0",
+      "P(a^x)^2 + Qa^x + R = 0 ⇒ u=a^x ⇒ Pu^2+Qu+R=0",
     ],
     penjelasan: "Bentuk paling dasar: kalau basis kedua ruas sudah sama dan pangkat di ruas kanan sudah berupa bilangan konstan $P$ (bukan fungsi), maka pangkat di ruas kiri langsung disamakan dengan konstanta itu: $f(x)=P$. Ini kasus khusus dari aturan umum — kalau basis kedua ruas SUDAH sama (atau bisa disamakan dengan sifat eksponen), langsung samakan pangkatnya: $f(x)=g(x)$. Kalau basisnya berbeda tapi pangkatnya sudah sama persis di kedua ruas, satu-satunya cara persamaan itu benar adalah pangkatnya $=0$ (karena $a^0=b^0=1$). Untuk bentuk yang menyerupai persamaan kuadrat (ada $a^{2x}$ dan $a^x$ dalam satu persamaan), misalkan $u=a^x$ dulu supaya jadi $Pu^2+Qu+R=0$, selesaikan $u$ dengan pemfaktoran/rumus ABC, baru kembalikan $a^x=u$ untuk mencari $x$ (nilai $u$ harus positif karena $a^x>0$).",
     contoh: [
-      "3^{5x-9}=3^{2x+3}  §  5x-9=2x+3  §  3x=12  §  x=4",
-      "8^{x+2}=32^{x-1}  §  (2^3)^{x+2}=(2^5)^{x-1}  §  3x+6=5x-5  §  x=\tfrac{11}{2}",
-      "4^{x}-5\\cdot2^{x}+4=0  §  u=2^{x}  §  u^2-5u+4=0  §  (u-1)(u-4)=0  §  u=1\\text{ atau }u=4  §  x=0\\text{ atau }x=2",
+      "3^{5x-9}=3^{2x+3} ⇒ 5x-9=2x+3 ⇒ 3x=12 ⇒ x=4",
+      "8^{x+2}=32^{x-1} ⇒ (2^3)^{x+2}=(2^5)^{x-1} ⇒ 3x+6=5x-5 ⇒ x=\\frac{11}{2}",
+      "4^x-5\\cdot2^x+4=0 ⇒ u=2^x ⇒ u^2-5u+4=0 ⇒ (u-1)(u-4)=0 ⇒ u=1\\text{ atau }u=4 ⇒ x=0\\text{ atau }x=2",
     ],
-  },
+  }
 };
 const HINTS = {
   E1: { t1: "Ingat: $a^n$ berarti $a$ dikalikan dengan dirinya sendiri sebanyak $n$ kali — bukan $a \\times n$.", t2: "Tulis dulu perkaliannya secara lengkap sebelum dihitung, misalnya $2^4 = 2\\times2\\times2\\times2$, baru kalikan satu per satu.", full: "$2^4$ artinya 2 dikalikan sebanyak 4 kali: $2\\times2\\times2\\times2=16$. Hati-hati juga dengan tanda kurung: $(-2)^2=4$, tapi $-2^2=-4$." },
@@ -296,58 +296,46 @@ function formatDuration(sec) {
 }
 
 // ---------------- Komponen: MathText — merender notasi LaTeX asli pakai KaTeX ----------------
-function normalizeDisplayMath(tex) {
-  const raw = String(tex || '').trim();
-  if (/\\begin\{(aligned|alignedat|gathered|array|cases|split)\}/.test(raw)) return raw;
-
-  // Rantai langkah panjang: pecah menjadi baris terpisah.
-  // Gunakan simbol Unicode ⇒ agar tidak bergantung pada command \Rightarrow/\quad.
-  const parts = raw.split(/\s*(?:\\Rightarrow|\\to|→|⇒|§)\s*/).filter(Boolean);
-  const hasTransition = parts.length > 1 && /(?:\\Rightarrow|\\to|→|⇒|§)/.test(raw);
-  if (!hasTransition) return raw;
-
-  return `\\begin{gathered}${parts.map((part, i) => `${i === 0 ? '' : '⇒\u00a0'}${part.trim()}`).join('\\[4pt]')}\\end{gathered}`;
+function sanitizeMathTex(tex) {
+  return String(tex || '')
+    .replace(/≠/g, '\\ne ')
+    .replace(/≥/g, '\\ge ')
+    .replace(/≤/g, '\\le ')
+    .replace(/\s*§\s*/g, ' ⇒ ')
+    .replace(/\\qquad/g, ' ')
+    .replace(/\\quad/g, ' ')
+    .trim();
 }
 
-// ---------------- Komponen: MathText — merender notasi LaTeX asli pakai KaTeX ----------------
+function normalizeDisplayMath(tex) {
+  const raw = sanitizeMathTex(tex);
+  if (/\\begin\{(aligned|alignedat|gathered|array|cases|split)\}/.test(raw)) return raw;
+  const parts = raw.split(/\s*(?:\\Rightarrow|\\to|→|⇒)\s*/).filter(Boolean);
+  if (parts.length <= 1) return raw;
+  return `\\begin{gathered}${parts.map((part, i) => `${i === 0 ? '' : '⇒\\,'}${part.trim()}`).join('\\\\[5pt]')}\\end{gathered}`;
+}
+
 function KaTeXSpan({ tex, block = false, className = '' }) {
   let html;
   try {
-    const displayTex = block ? normalizeDisplayMath(tex) : tex;
-    html = katex.renderToString(displayTex, { throwOnError: false, displayMode: block });
+    const cleanTex = sanitizeMathTex(tex);
+    const displayTex = block ? normalizeDisplayMath(cleanTex) : cleanTex;
+    html = katex.renderToString(displayTex, { throwOnError: false, displayMode: block, strict: 'ignore' });
   } catch (e) {
-    html = tex;
+    html = String(tex || '');
   }
-  if (!block) {
-    return <span className={`math-inline ${className}`.trim()} dangerouslySetInnerHTML={{ __html: html }} />;
-  }
-  return (
-    <div className={`math-block-wrap ${className}`.trim()} aria-label="Persamaan matematika">
-      <span className="math-block" dangerouslySetInnerHTML={{ __html: html }} />
-    </div>
-  );
+  if (!block) return <span className={`math-inline ${className}`.trim()} dangerouslySetInnerHTML={{ __html: html }} />;
+  return <div className={`math-block-wrap ${className}`.trim()} aria-label="Persamaan matematika"><span className="math-block" dangerouslySetInnerHTML={{ __html: html }} /></div>;
 }
+
 function MathText({ text, className = '' }) {
   if (text === null || text === undefined || text === '') return null;
   const raw = Array.isArray(text) ? text.join("\n") : String(text);
   if (!raw) return null;
-
-  // String tanpa tanda $ tapi mengandung perintah LaTeX -> display math.
-  if (!raw.includes('$') && /\\[a-zA-Z]/.test(raw)) {
-    return <KaTeXSpan tex={raw} block className={className} />;
-  }
-
-  // Teks biasa dengan potongan matematika diapit tanda $...$.
+  const looksLikeMath = !raw.includes('$') && (/\\[a-zA-Z]/.test(raw) || /[\^_=]|[≠≥≤]|§|⇒|→/.test(raw));
+  if (looksLikeMath) return <KaTeXSpan tex={raw} block className={className} />;
   const parts = raw.split(/(\$[^$]+\$)/g);
-  return (
-    <span className={className}>
-      {parts.map((part, i) =>
-        part.startsWith('$') && part.endsWith('$') && part.length > 1
-          ? <KaTeXSpan key={i} tex={part.slice(1, -1)} />
-          : <span key={i}>{part}</span>
-      )}
-    </span>
-  );
+  return <span className={className}>{parts.map((part, i) => part.startsWith('$') && part.endsWith('$') && part.length > 1 ? <KaTeXSpan key={i} tex={part.slice(1, -1)} /> : <span key={i}>{part}</span>)}</span>;
 }
 // ---------------- Komponen: grafik contoh pertumbuhan & peluruhan eksponensial (untuk materi E10) ----------------
 const EXP_GROWTH_DATA = Array.from({ length: 7 }, (_, t) => ({ x: t, y: Math.round(500 * Math.pow(1.2, t) * 10) / 10 }));
@@ -1963,7 +1951,7 @@ function AppInner() {
                         <div className="basic-formula-box">
                           <div className="basic-label">BENTUK DASAR</div>
                           <MathText text="a^{f(x)} = a^{P}" />
-                          <div className="basic-condition"><MathText text="(a>0,\\ a\\neq1,\\ P\\text{ konstanta})" /></div>
+                          <div className="basic-condition">(a &gt; 0, a ≠ 1, P konstanta)</div>
                           <div className="basic-result"><MathText text="⇒ f(x)=P" /></div>
                         </div>
                         <div className="qtext">
@@ -2841,24 +2829,24 @@ function GlobalStyle() {
         .stat-chip { background:white; border:1px solid var(--line); border-radius:14px; padding:10px 14px; display:flex; align-items:center; gap:8px; font-size:13px; font-weight:600; }
         .opt { display:block; width:100%; text-align:left; padding:13px 14px; border-radius:12px; border:1.5px solid var(--line); background:var(--paper-2); margin-bottom:9px; font-size:14.5px; font-family:'IBM Plex Mono'; transition:border-color .15s; }
         .opt.picked { border-color:var(--brand); background:var(--brand-light); }
-        .qtext { font-family:'STIX Two Math','Cambria Math',serif; font-size:clamp(13px,2.4vw,16px); margin:14px 0 20px; padding:18px 20px; background:var(--paper-2); border-radius:14px; border:1px solid var(--line); text-align:center; min-width:0; }
+        .qtext { font-family:'STIX Two Math','Cambria Math',serif; font-size:clamp(13px,2.0vw,15.5px); margin:14px 0 20px; padding:18px 20px; background:var(--paper-2); border-radius:14px; border:1px solid var(--line); text-align:center; min-width:0; }
         .qtext .katex-display { margin:8px 0; padding:2px 0; }
         .qtext .katex-display:not(:last-child) { margin-bottom:18px; }
-        .math-box { font-family:'STIX Two Math','Cambria Math',serif; font-size:clamp(12px,2.1vw,14.5px); padding:14px 16px; background:var(--paper-2); border-radius:12px; border:1px solid var(--line); margin-bottom:8px; text-align:center; min-width:0; }
+        .math-box { font-family:'STIX Two Math','Cambria Math',serif; font-size:clamp(12px,1.9vw,14px); padding:14px 16px; background:var(--paper-2); border-radius:12px; border:1px solid var(--line); margin-bottom:8px; text-align:center; min-width:0; }
         .math-box .katex-display { margin:0; padding:2px 0; }
         .math-block-wrap { width:100%; max-width:100%; display:flex; justify-content:center; align-items:flex-start; min-width:0; box-sizing:border-box; }
         .math-block { display:block; max-width:100%; min-width:0; }
         .math-block .katex-display { margin:0; }
         .math-block .katex-display > .katex { max-width:none; }
-        .math-block .katex { font-size:1em; }
-        .math-block .katex { max-width:none; }
+        .math-block .katex { font-size:0.95em; max-width:100%; }
+        .math-block .katex { max-width:100%; }
         .math-inline { max-width:100%; }
         .basic-formula-box { background:var(--paper-2); border:1px solid var(--line); border-radius:14px; padding:16px 16px; margin:14px 0 10px; text-align:center; }
         .basic-formula-box .basic-label { font-family:Inter,sans-serif; font-size:11px; font-weight:800; letter-spacing:.08em; color:var(--muted); margin-bottom:10px; }
         .basic-formula-box .math-block-wrap { margin:0; }
-        .basic-formula-box .math-block .katex { font-size:1em; }
-        .basic-condition { margin-top:3px; font-size:.82em; }
-        .basic-result { margin-top:4px; font-size:.88em; }
+        .basic-formula-box .math-block .katex { font-size:0.95em; max-width:100%; }
+        .basic-condition { margin-top:6px; font-size:13px; color:var(--muted); font-family:Inter,sans-serif; }
+        .basic-result { margin-top:5px; font-size:0.9em; }
         .math-sup { vertical-align:super; font-size:0.68em; line-height:0; }
         .math-radical { display:inline-flex; align-items:flex-start; white-space:nowrap; }
         .math-radical-idx { font-size:0.58em; margin-right:-3px; margin-top:-3px; }
