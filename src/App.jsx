@@ -296,79 +296,80 @@ function formatDuration(sec) {
 }
 
 // ---------------- Komponen: MathText — merender notasi LaTeX asli pakai KaTeX ----------------
-function KaTeXSpan({ tex, block = false }) {
-  const wrapRef = useRef(null);
-  const [scale, setScale] = useState(1);
+function normalizeDisplayMath(tex) {
+  const raw = String(tex || '').trim();
+  // Formula yang sudah memiliki struktur multi-baris dari penulis materi
+  // tidak disentuh agar layout aslinya tetap terjaga.
+  if (/\\begin\{(aligned|alignedat|gathered|array|cases|split)\}/.test(raw)) return raw;
 
+  // Untuk rantai langkah yang panjang, pecah berdasarkan operator transisi
+  // tingkat atas. Ini mencegah satu persamaan panjang dipaksa menjadi satu baris.
+  const tokenRe = /(\\;?\\xrightarrow\{[^{}]*\}\\;?|\\;?\\Rightarrow\\;?|\\;?\\to\\;?)/g;
+  const parts = raw.split(tokenRe).filter(Boolean);
+  const hasTransition = parts.length > 1 && parts.some(p => /\\(?:xrightarrow|Rightarrow|to)/.test(p));
+  if (!hasTransition) return raw;
+
+  const rows = [];
+  let current = '';
+  let pendingArrow = '';
+  for (const part of parts) {
+    if (/^\\;?\\xrightarrow\{[^{}]*\}\\;?$/.test(part) || /^\\;?\\Rightarrow\\;?$/.test(part) || /^\\;?\\to\\;?$/.test(part)) {
+      if (current.trim()) {
+        rows.push({ arrow: pendingArrow, expr: current.trim() });
+        current = '';
+      }
+      pendingArrow = part.trim();
+    } else {
+      current += part;
+    }
+  }
+  if (current.trim()) rows.push({ arrow: pendingArrow, expr: current.trim() });
+  if (rows.length < 2) return raw;
+
+  return `\\begin{aligned}${rows.map((r, i) => {
+    const arrow = i === 0 ? '' : `${r.arrow}\\quad`;
+    return `${arrow}${r.expr}`;
+  }).join('\\\\[5pt]') }\\end{aligned}`;
+}
+
+// ---------------- Komponen: MathText — merender notasi LaTeX asli pakai KaTeX ----------------
+function KaTeXSpan({ tex, block = false, className = '' }) {
   let html;
   try {
-    html = katex.renderToString(tex, { throwOnError: false, displayMode: block });
+    const displayTex = block ? normalizeDisplayMath(tex) : tex;
+    html = katex.renderToString(displayTex, { throwOnError: false, displayMode: block });
   } catch (e) {
     html = tex;
   }
-
-  // Rumus blok dibuat responsif: jika lebih lebar dari kartu, KaTeX akan
-  // diperkecil secara proporsional sampai muat. Jadi siswa tidak perlu
-  // menggeser horizontal untuk membaca persamaan.
-  useEffect(() => {
-    if (!block) return;
-    const wrap = wrapRef.current;
-    if (!wrap) return;
-
-    const fit = () => {
-      const katexEl = wrap.querySelector('.katex');
-      if (!katexEl) return;
-      const available = Math.max(80, wrap.clientWidth - 8);
-      const naturalWidth = katexEl.getBoundingClientRect().width;
-      const nextScale = naturalWidth > available ? Math.max(0.55, available / naturalWidth) : 1;
-      setScale(prev => Math.abs(prev - nextScale) > 0.01 ? nextScale : prev);
-    };
-
-    const raf = requestAnimationFrame(fit);
-    const ro = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(fit) : null;
-    if (ro) ro.observe(wrap);
-    window.addEventListener('resize', fit);
-    return () => {
-      cancelAnimationFrame(raf);
-      ro?.disconnect();
-      window.removeEventListener('resize', fit);
-    };
-  }, [tex, block]);
-
   if (!block) {
-    return <span className="math-inline" dangerouslySetInnerHTML={{ __html: html }} />;
+    return <span className={`math-inline ${className}`.trim()} dangerouslySetInnerHTML={{ __html: html }} />;
   }
-
   return (
-    <div ref={wrapRef} className="math-block-wrap" aria-label="Persamaan matematika">
-      <span
-        className="math-block"
-        style={{ transform: `scale(${scale})` }}
-        dangerouslySetInnerHTML={{ __html: html }}
-      />
+    <div className={`math-block-wrap ${className}`.trim()} aria-label="Persamaan matematika">
+      <span className="math-block" dangerouslySetInnerHTML={{ __html: html }} />
     </div>
   );
 }
-function MathText({ text }) {
-  if (text === null || text === undefined || text === "") return null;
+function MathText({ text, className = '' }) {
+  if (text === null || text === undefined || text === '') return null;
   const raw = Array.isArray(text) ? text.join("\n") : String(text);
   if (!raw) return null;
 
-  // String tanpa tanda $ tapi mengandung perintah LaTeX (mis. formula/contoh) -> render seluruhnya sebagai math block
-  if (!raw.includes("$") && /\\[a-zA-Z]/.test(raw)) {
-    return <KaTeXSpan tex={raw} block />;
+  // String tanpa tanda $ tapi mengandung perintah LaTeX -> display math.
+  if (!raw.includes('$') && /\\[a-zA-Z]/.test(raw)) {
+    return <KaTeXSpan tex={raw} block className={className} />;
   }
 
-  // Teks biasa dengan potongan matematika diapit tanda $...$ (mis. penjelasan, hint, soal)
+  // Teks biasa dengan potongan matematika diapit tanda $...$.
   const parts = raw.split(/(\$[^$]+\$)/g);
   return (
-    <>
+    <span className={className}>
       {parts.map((part, i) =>
-        part.startsWith("$") && part.endsWith("$") && part.length > 1
+        part.startsWith('$') && part.endsWith('$') && part.length > 1
           ? <KaTeXSpan key={i} tex={part.slice(1, -1)} />
           : <span key={i}>{part}</span>
       )}
-    </>
+    </span>
   );
 }
 // ---------------- Komponen: grafik contoh pertumbuhan & peluruhan eksponensial (untuk materi E10) ----------------
@@ -1980,9 +1981,24 @@ function AppInner() {
                   <div className="card">
                     {redirectNote && <div className="misc-item" style={{ marginBottom: 12 }}>↳ {redirectNote}</div>}
                     <div className="tag-eyebrow">Materi · {CONCEPTS[activeConcept].name}</div>
-                    <div className="qtext">
-                      {EFFECTIVE_MATERI[activeConcept].formula.map((f, i) => <MathText key={i} text={f} />)}
-                    </div>
+                    {activeConcept === "E11" ? (
+                      <>
+                        <div className="basic-formula-box">
+                          <div className="basic-label">BENTUK DASAR</div>
+                          <MathText text="a^{f(x)} = a^{P} \\quad (a>0,\\ a\\neq1,\\ P\\text{ konstanta})" />
+                          <div style={{ marginTop: 8 }}>
+                            <MathText text="\\Rightarrow\\quad f(x)=P" />
+                          </div>
+                        </div>
+                        <div className="qtext">
+                          {EFFECTIVE_MATERI[activeConcept].formula.slice(1).map((f, i) => <MathText key={i} text={f} />)}
+                        </div>
+                      </>
+                    ) : (
+                      <div className="qtext">
+                        {EFFECTIVE_MATERI[activeConcept].formula.map((f, i) => <MathText key={i} text={f} />)}
+                      </div>
+                    )}
                     <p style={{ fontSize: 14, lineHeight: 1.6 }}><MathText text={EFFECTIVE_MATERI[activeConcept].penjelasan} /></p>
                     <div style={{ marginTop: 14 }}>
                       <div className="tag-eyebrow" style={{ marginBottom: 8 }}>Contoh</div>
@@ -2849,15 +2865,20 @@ function GlobalStyle() {
         .stat-chip { background:white; border:1px solid var(--line); border-radius:14px; padding:10px 14px; display:flex; align-items:center; gap:8px; font-size:13px; font-weight:600; }
         .opt { display:block; width:100%; text-align:left; padding:13px 14px; border-radius:12px; border:1.5px solid var(--line); background:var(--paper-2); margin-bottom:9px; font-size:14.5px; font-family:'IBM Plex Mono'; transition:border-color .15s; }
         .opt.picked { border-color:var(--brand); background:var(--brand-light); }
-        .qtext { font-family:'STIX Two Math','Cambria Math',serif; font-size:clamp(16px,4.2vw,22px); margin:14px 0 20px; padding:18px 20px; background:var(--paper-2); border-radius:14px; border:1px solid var(--line); text-align:center; overflow:hidden; min-width:0; }
-        .qtext .katex-display { margin:8px 0; overflow:visible; padding:2px 0; }
+        .qtext { font-family:'STIX Two Math','Cambria Math',serif; font-size:clamp(16px,4.2vw,22px); margin:14px 0 20px; padding:18px 20px; background:var(--paper-2); border-radius:14px; border:1px solid var(--line); text-align:center; min-width:0; }
+        .qtext .katex-display { margin:8px 0; padding:2px 0; }
         .qtext .katex-display:not(:last-child) { margin-bottom:18px; }
-        .math-box { font-family:'STIX Two Math','Cambria Math',serif; font-size:clamp(14px,3.6vw,19px); padding:14px 16px; background:var(--paper-2); border-radius:12px; border:1px solid var(--line); margin-bottom:8px; text-align:center; overflow:hidden; min-width:0; }
-        .math-box .katex-display { margin:0; overflow:visible; padding:2px 0; }
-        .math-block-wrap { width:100%; max-width:100%; overflow:hidden; display:flex; justify-content:center; align-items:flex-start; min-width:0; }
-        .math-block { display:block; max-width:none; flex:0 0 auto; transform-origin:center top; }
-        .math-block .katex-display { white-space:normal; }
+        .math-box { font-family:'STIX Two Math','Cambria Math',serif; font-size:clamp(14px,3.6vw,19px); padding:14px 16px; background:var(--paper-2); border-radius:12px; border:1px solid var(--line); margin-bottom:8px; text-align:center; min-width:0; }
+        .math-box .katex-display { margin:0; padding:2px 0; }
+        .math-block-wrap { width:100%; max-width:100%; display:flex; justify-content:center; align-items:flex-start; min-width:0; box-sizing:border-box; }
+        .math-block { display:block; max-width:100%; min-width:0; }
+        .math-block .katex-display { margin:0; max-width:100%; }
+        .math-block .katex-display > .katex { max-width:100%; }
+        .math-block .katex { max-width:100%; }
         .math-inline { max-width:100%; }
+        .basic-formula-box { background:var(--paper-2); border:1px solid var(--line); border-radius:14px; padding:18px 16px; margin:14px 0 10px; text-align:center; }
+        .basic-formula-box .basic-label { font-family:Inter,sans-serif; font-size:11px; font-weight:800; letter-spacing:.08em; color:var(--muted); margin-bottom:10px; }
+        .basic-formula-box .math-block-wrap { margin:0; }
         .math-sup { vertical-align:super; font-size:0.68em; line-height:0; }
         .math-radical { display:inline-flex; align-items:flex-start; white-space:nowrap; }
         .math-radical-idx { font-size:0.58em; margin-right:-3px; margin-top:-3px; }
