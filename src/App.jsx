@@ -100,7 +100,7 @@ const MATERI = {
   E11: {
     formula: [
       "a^{f(x)} = a^{P}",
-      "a^{f(x)} = a^{g(x)} (a>0, a\\ne1) ⇒ f(x)=g(x)",
+      "a^{f(x)} = a^{g(x)} (a>0) ⇒ f(x)=g(x)",
       "a^{h(x)} = b^{h(x)} (a,b>0, a\\ne b) ⇒ h(x)=0",
       "P(a^x)^2 + Qa^x + R = 0 ⇒ u=a^x ⇒ Pu^2+Qu+R=0",
     ],
@@ -1951,7 +1951,7 @@ function AppInner() {
                         <div className="basic-formula-box">
                           <div className="basic-label">BENTUK DASAR</div>
                           <MathText text="a^{f(x)} = a^{P}" />
-                          <div className="basic-condition">(a &gt; 0, a ≠ 1, P konstanta)</div>
+                          <div className="basic-condition">(a &gt; 0, P konstanta)</div>
                           <div className="basic-result"><MathText text="⇒ f(x)=P" /></div>
                         </div>
                         <div className="qtext">
