@@ -414,7 +414,7 @@ function computeBadgeStats(attempts, statuses, streak) {
 // ---------------- Refleksi: saran pengembangan aplikasi berdasarkan pengalaman siswa ----------------
 const REFLECTION_QUESTIONS = [
   { id: "r1", label: "Kemudahan Penggunaan", text: "Menurutmu, apakah aplikasi ini mudah digunakan? Bagian atau menu mana yang menurutmu masih membingungkan?" },
-  { id: "r2", label: "Fitur Paling Membantu", text: "Fitur apa (misalnya Tutor AI, Latihan, Ujian, Komik, dll.) yang paling membantu kamu belajar, dan kenapa?" },
+  { id: "r2", label: "Fitur Paling Membantu", text: "Fitur apa (misalnya Tutor AI, Latihan, Ujian, dll.) yang paling membantu kamu belajar, dan kenapa?" },
   { id: "r3", label: "Kendala Teknis", text: "Apakah kamu pernah mengalami error, aplikasi lambat/lag, atau bagian yang tidak berfungsi dengan baik? Jelaskan kapan dan di menu apa." },
   { id: "r4", label: "Pengalaman di HP vs Laptop", text: "Bagaimana pengalamanmu menggunakan aplikasi ini di HP (mobile) dibandingkan di laptop/komputer?" },
   { id: "r5", label: "Saran Pengembangan", text: "Apa saran atau fitur baru yang kamu usulkan supaya aplikasi ini lebih baik ke depannya?" },
@@ -1783,7 +1783,7 @@ function AppInner() {
             <div style={{ fontSize: 11, letterSpacing: ".06em", textTransform: "uppercase", opacity: 0.85, fontWeight: 700, marginBottom: 6 }}>Adaptive Concept-Based Intelligent Tutoring System</div>
             <h1 className="disp" style={{ fontSize: 27, margin: "10px 0" }}>Belajar Matematika Lebih Cerdas</h1>
             <p style={{ opacity: 0.92, fontSize: 14, maxWidth: 420, margin: "0 auto 22px" }}>
-              Sistem pembelajaran adaptif materi Eksponensial — lewat komik interaktif, AI Tutor, dan latihan yang menyesuaikan dirimu.
+              Sistem pembelajaran adaptif materi Eksponensial — lewat AI Tutor dan latihan yang menyesuaikan dirimu.
             </p>
             <div style={{ display: "flex", gap: 10, justifyContent: "center", flexWrap: "wrap" }}>
               <button className="btn-primary" style={{ background: "white", color: "var(--brand-dark)", boxShadow: "none" }} onClick={() => { setMode("auth"); setAuthTab("login"); setAuthRole("siswa"); setAuthError(""); }}><User size={15} /> Saya Siswa</button>
@@ -2382,7 +2382,7 @@ function AppInner() {
                   <div className="card">
                     <div className="tag-eyebrow">Koleksi Badge</div>
                     <h2 className="disp" style={{ fontSize: 19, marginBottom: 4 }}>{earnedBadges.length} dari {BADGES.length} badge terkumpul</h2>
-                    <p style={{ color: "var(--muted)", fontSize: 13, marginBottom: 16 }}>Kumpulkan badge dengan aktif belajar dan membaca komik.</p>
+                    <p style={{ color: "var(--muted)", fontSize: 13, marginBottom: 16 }}>Kumpulkan badge dengan aktif belajar dan latihan soal.</p>
                     <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(130px, 1fr))", gap: 12 }}>
                       {BADGES.map((b) => {
                         const earned = b.check(badgeStats);
