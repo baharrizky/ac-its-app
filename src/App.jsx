@@ -284,6 +284,15 @@ function overallPctOf(attempts) {
   if (tested.length === 0) return 0;
   return Math.round((tested.reduce((a, b) => a + b, 0) / CONCEPT_ORDER.length) * 100);
 }
+// Nilai latihan: rata-rata skor SEMUA soal latihan yang pernah dikerjakan siswa (lintas konsep),
+// tetap terhitung meskipun siswa sudah menyelesaikan/menghabiskan latihannya (berbeda dari
+// "Progress" yang mengukur penguasaan konsep berdasarkan 5 percobaan terakhir per konsep).
+function latihanNilaiOf(attempts) {
+  const all = CONCEPT_ORDER.flatMap((c) => attempts[c] || []);
+  if (all.length === 0) return null;
+  const avg = all.reduce((a, b) => a + b, 0) / all.length;
+  return { nilai: Math.round(avg * 100), jumlahSoal: all.length };
+}
 const toneColor = { good: "var(--teal)", warn: "var(--amber)", bad: "var(--rose)", neutral: "var(--muted)" };
 const GURU_PALETTE = { strong: "#F472B6", mid: "#C4B5FD", soft: "#A78BFA", pale: "#F5F3FF" };
 function formatDuration(sec) {
@@ -414,7 +423,7 @@ function computeBadgeStats(attempts, statuses, streak) {
 // ---------------- Refleksi: saran pengembangan aplikasi berdasarkan pengalaman siswa ----------------
 const REFLECTION_QUESTIONS = [
   { id: "r1", label: "Kemudahan Penggunaan", text: "Menurutmu, apakah aplikasi ini mudah digunakan? Bagian atau menu mana yang menurutmu masih membingungkan?" },
-  { id: "r2", label: "Fitur Paling Membantu", text: "Fitur apa (misalnya Tutor AI, Latihan, Ujian, dll.) yang paling membantu kamu belajar, dan kenapa?" },
+  { id: "r2", label: "Fitur Paling Membantu", text: "Fitur apa (misalnya Tutor AI, Latihan, Ujian, Komik, dll.) yang paling membantu kamu belajar, dan kenapa?" },
   { id: "r3", label: "Kendala Teknis", text: "Apakah kamu pernah mengalami error, aplikasi lambat/lag, atau bagian yang tidak berfungsi dengan baik? Jelaskan kapan dan di menu apa." },
   { id: "r4", label: "Pengalaman di HP vs Laptop", text: "Bagaimana pengalamanmu menggunakan aplikasi ini di HP (mobile) dibandingkan di laptop/komputer?" },
   { id: "r5", label: "Saran Pengembangan", text: "Apa saran atau fitur baru yang kamu usulkan supaya aplikasi ini lebih baik ke depannya?" },
@@ -621,6 +630,10 @@ function AppInner() {
   const [latihanLocked, setLatihanLocked] = useState(false);
   const [latihanLeaveWarning, setLatihanLeaveWarning] = useState(false);
   const [latihanViolations, setLatihanViolations] = useState(0);
+  // ---------- Statistik pengerjaan latihan (persisten): total waktu, jumlah minta hint, jumlah keluar halaman ----------
+  const [latihanTimeSec, setLatihanTimeSec] = useState(0);
+  const [latihanHintCount, setLatihanHintCount] = useState(0);
+  const latihanQTimerRef = useRef(null);
   const EXAM_LENGTH = 15;
   const [examEssayConfirmed, setExamEssayConfirmed] = useState(false);
 
@@ -652,6 +665,7 @@ function AppInner() {
   const [guruKelasFilter, setGuruKelasFilter] = useState("semua");
   const [guruLoading, setGuruLoading] = useState(false);
   const [guruSelectedAttempt, setGuruSelectedAttempt] = useState(null);
+  const [guruSelectedStudent, setGuruSelectedStudent] = useState(null);
 
   // ---------- Admin: Kode Akses Guru ----------
   const [accessCodes, setAccessCodes] = useState([]);
@@ -743,6 +757,9 @@ function AppInner() {
           setWrongQ(d.wrongQ || {});
           setTutorMessages(d.tutorMessages || []);
           setExamHistory(d.examHistory || []);
+          setLatihanTimeSec(d.latihanTimeSec || 0);
+          setLatihanHintCount(d.latihanHintCount || 0);
+          setLatihanViolations(d.latihanViolations || 0);
           loadedStreak = d.streak || 0;
           loadedLastActive = d.lastActiveDate || null;
         }
@@ -772,8 +789,8 @@ function AppInner() {
 
   useEffect(() => {
     if (!authUser || !profile || profile.role !== "siswa" || !progressLoaded) return;
-    setDoc(doc(db, "progress", authUser.uid), { attempts, misconceptions, poolIndex, completedQ, wrongQ, streak, lastActiveDate, tutorMessages: tutorMessages.slice(-30), examHistory: examHistory.slice(0, 10) }, { merge: true }).catch(() => {});
-  }, [attempts, misconceptions, poolIndex, completedQ, wrongQ, streak, lastActiveDate, tutorMessages, examHistory, authUser, profile, progressLoaded]);
+    setDoc(doc(db, "progress", authUser.uid), { attempts, misconceptions, poolIndex, completedQ, wrongQ, streak, lastActiveDate, tutorMessages: tutorMessages.slice(-30), examHistory: examHistory.slice(0, 10), latihanTimeSec, latihanHintCount, latihanViolations }, { merge: true }).catch(() => {});
+  }, [attempts, misconceptions, poolIndex, completedQ, wrongQ, streak, lastActiveDate, tutorMessages, examHistory, latihanTimeSec, latihanHintCount, latihanViolations, authUser, profile, progressLoaded]);
 
   // ---------- Refleksi siswa: muat jawaban tersimpan (kalau pernah mengisi sebelumnya) ----------
   useEffect(() => {
@@ -948,6 +965,7 @@ function AppInner() {
     setConsecWrong(0);
     setHintTier(0);
     setScreen("latihan");
+    latihanQTimerRef.current = Date.now();
     const pool = EFFECTIVE_POOL[next] || [];
     const doneCount = (completedQ[next] || []).length;
     if (pool.length > 0 && doneCount < pool.length) {
@@ -967,6 +985,7 @@ function AppInner() {
     setConsecWrong(0);
     setHintTier(0);
     setScreen("latihan");
+    latihanQTimerRef.current = Date.now();
     const pool = EFFECTIVE_POOL[concept] || [];
     const doneCount = (completedQ[concept] || []).length;
     if (pool.length > 0 && doneCount < pool.length) {
@@ -995,6 +1014,7 @@ function AppInner() {
     setConsecWrong(0);
     setHintTier(0);
     setScreen("latihan");
+    latihanQTimerRef.current = Date.now();
   }
 
   function submitAnswer() {
@@ -1025,6 +1045,13 @@ function AppInner() {
     const doneSoFar = completedQ[activeConcept] || [];
     const newDone = doneSoFar.includes(finishedIdx) ? doneSoFar : [...doneSoFar, finishedIdx];
     setCompletedQ((c) => ({ ...c, [activeConcept]: newDone }));
+    // Catat waktu pengerjaan soal ini (dari pertama kali ditampilkan sampai selesai/terkunci,
+    // termasuk waktu membaca hint & mencoba ulang) ke akumulasi total waktu latihan siswa.
+    if (latihanQTimerRef.current) {
+      const elapsed = (Date.now() - latihanQTimerRef.current) / 1000;
+      setLatihanTimeSec((t) => t + elapsed);
+      latihanQTimerRef.current = null;
+    }
     // soal ini terselesaikan lewat jalur salah (3x salah berturut-turut) kalau diag.correct eksplisit false —
     // tandai supaya ditampilkan silang merah, bukan centang hijau, pada peta lompat soal
     const isWrongPath = diag && diag.correct === false;
@@ -1046,6 +1073,7 @@ function AppInner() {
     setConsecWrong(0);
     setHintTier(0);
     setScreen("latihan");
+    if (nextIdx !== null) latihanQTimerRef.current = Date.now();
     if (nextIdx === null) {
       // seluruh soal pada konsep ini sudah terjawab & terkunci — lepaskan kunci sesi latihan
       setLatihanLocked(false);
@@ -1058,6 +1086,7 @@ function AppInner() {
 
   function goToHint() {
     setHintTier(diag.tier);
+    setLatihanHintCount((n) => n + 1);
     setScreen("hint");
   }
 
@@ -1346,7 +1375,7 @@ function AppInner() {
         if (guruKelasAjar.length > 0 && !guruKelasAjar.includes(u.kelas)) continue;
         const progSnap = await getDoc(doc(db, "progress", uDoc.id));
         const prog = progSnap.exists() ? progSnap.data() : { attempts: EMPTY_ATTEMPTS, misconceptions: [], examHistory: [] };
-        list.push({ uid: uDoc.id, name: u.name || "Siswa", kelas: u.kelas, sekolah: u.sekolah, attempts: prog.attempts || EMPTY_ATTEMPTS, misconceptions: prog.misconceptions || [], examHistory: prog.examHistory || [] });
+        list.push({ uid: uDoc.id, name: u.name || "Siswa", kelas: u.kelas, sekolah: u.sekolah, attempts: prog.attempts || EMPTY_ATTEMPTS, misconceptions: prog.misconceptions || [], examHistory: prog.examHistory || [], streak: prog.streak || 0, latihanTimeSec: prog.latihanTimeSec || 0, latihanHintCount: prog.latihanHintCount || 0, latihanViolations: prog.latihanViolations || 0 });
       }
       setGuruStudents(list);
     } catch (e) {}
@@ -1658,6 +1687,12 @@ function AppInner() {
         row[CONCEPTS[c].name] = m !== null ? Math.round(m * 100) + "%" : "Belum diuji";
       });
       row["Progress Keseluruhan"] = overallPctOf(s.attempts) + "%";
+      const nl = latihanNilaiOf(s.attempts);
+      row["Nilai Latihan"] = nl ? nl.nilai : "-";
+      row["Jumlah Soal Latihan Dikerjakan"] = nl ? nl.jumlahSoal : 0;
+      row["Waktu Pengerjaan Latihan"] = formatDuration(s.latihanTimeSec || 0);
+      row["Jumlah Minta Hint/Bantuan"] = s.latihanHintCount || 0;
+      row["Jumlah Keluar Halaman Saat Latihan"] = s.latihanViolations || 0;
       row["Jumlah Miskonsepsi Tercatat"] = (s.misconceptions || []).length;
       return row;
     });
@@ -1776,6 +1811,137 @@ function AppInner() {
         </div>
       )}
 
+      {profile?.role === "guru" && guruSelectedStudent && (() => {
+        const s = guruSelectedStudent;
+        const sXp = computeXp(s.attempts);
+        const sLevel = computeLevel(sXp);
+        const nl = latihanNilaiOf(s.attempts);
+        const conceptRows = CONCEPT_ORDER.map((c) => {
+          const m = computeMastery(s.attempts[c] || []);
+          const st = statusOf(s.attempts[c] || []);
+          return { c, m, st, pct: m !== null ? Math.round(m * 100) : null };
+        });
+        // Analisis: konsep yang masih perlu diperkuat, diurutkan dari yang paling lemah.
+        // Mencakup konsep yang belum pernah dicoba sama sekali (dianggap paling prioritas).
+        const weakConcepts = conceptRows
+          .filter((r) => r.st.tone !== "good")
+          .sort((a, b) => (a.m ?? -1) - (b.m ?? -1));
+        return (
+          <div style={{
+            position: "fixed", inset: 0, background: "rgba(30,27,51,0.72)", zIndex: 9998,
+            display: "flex", alignItems: "flex-start", justifyContent: "center", padding: "30px 16px", overflowY: "auto",
+          }} onClick={(e) => { if (e.target === e.currentTarget) setGuruSelectedStudent(null); }}>
+            <div className="card" style={{ maxWidth: 680, width: "100%", margin: "0 auto" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10, marginBottom: 14 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                  <div className="avatar avatar-lg">{(s.name || "?").trim().charAt(0).toUpperCase()}</div>
+                  <div>
+                    <div className="tag-eyebrow" style={{ marginBottom: 2 }}>Profil &amp; Analisis Belajar</div>
+                    <h2 className="disp" style={{ fontSize: 18 }}>{s.name}</h2>
+                    <div style={{ fontSize: 12, color: "var(--muted)" }}>
+                      {s.kelas ? `Kelas ${s.kelas}` : ""}{s.kelas && s.sekolah ? " · " : ""}{s.sekolah || ""}
+                    </div>
+                  </div>
+                </div>
+                <button className="btn-ghost" style={{ padding: 7 }} onClick={() => setGuruSelectedStudent(null)} title="Tutup">✕</button>
+              </div>
+
+              <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 20 }}>
+                <div className="card" style={{ flex: "1 1 130px", minWidth: 120 }}>
+                  <div style={{ fontSize: 11, color: "var(--muted)" }}>Progress</div>
+                  <div className="disp" style={{ fontSize: 20 }}>{overallPctOf(s.attempts)}%</div>
+                </div>
+                <div className="card" style={{ flex: "1 1 130px", minWidth: 120 }}>
+                  <div style={{ fontSize: 11, color: "var(--muted)" }}>Nilai Latihan</div>
+                  <div className="disp" style={{ fontSize: 20 }}>{nl ? nl.nilai : "-"}</div>
+                  {nl && <div style={{ fontSize: 10.5, color: "var(--muted)" }}>{nl.jumlahSoal} soal dikerjakan</div>}
+                </div>
+                <div className="card" style={{ flex: "1 1 130px", minWidth: 120 }}>
+                  <div style={{ fontSize: 11, color: "var(--muted)" }}>Level / XP</div>
+                  <div className="disp" style={{ fontSize: 20 }}>Lv {sLevel.level}</div>
+                  <div style={{ fontSize: 10.5, color: "var(--muted)" }}>{sXp} XP</div>
+                </div>
+                <div className="card" style={{ flex: "1 1 130px", minWidth: 120 }}>
+                  <div style={{ fontSize: 11, color: "var(--muted)" }}>Streak</div>
+                  <div className="disp" style={{ fontSize: 20 }}>🔥 {s.streak || 0}</div>
+                </div>
+              </div>
+
+              <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 20 }}>
+                <div className="card" style={{ flex: "1 1 150px", minWidth: 140 }}>
+                  <div style={{ fontSize: 11, color: "var(--muted)" }}>Waktu Pengerjaan Latihan</div>
+                  <div className="disp" style={{ fontSize: 18 }}>{formatDuration(s.latihanTimeSec || 0)}</div>
+                </div>
+                <div className="card" style={{ flex: "1 1 150px", minWidth: 140 }}>
+                  <div style={{ fontSize: 11, color: "var(--muted)" }}>Minta Bantuan / Hint</div>
+                  <div className="disp" style={{ fontSize: 18 }}>{s.latihanHintCount || 0}x</div>
+                </div>
+                <div className="card" style={{ flex: "1 1 150px", minWidth: 140 }}>
+                  <div style={{ fontSize: 11, color: "var(--muted)" }}>Keluar Halaman Saat Latihan</div>
+                  <div className="disp" style={{ fontSize: 18 }}>{s.latihanViolations || 0}x</div>
+                </div>
+              </div>
+
+              {weakConcepts.length > 0 && (
+                <div className="card" style={{ marginBottom: 20, borderColor: "var(--amber)", background: "var(--amber-light)" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+                    <AlertTriangle size={17} style={{ color: "#9A6414" }} />
+                    <div style={{ fontWeight: 700, fontSize: 13.5, color: "#9A6414" }}>Analisis: Materi yang Masih Perlu Diperkuat</div>
+                  </div>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                    {weakConcepts.map((r) => (
+                      <div key={r.c} style={{ display: "flex", justifyContent: "space-between", fontSize: 12.5, color: "#6b4d10" }}>
+                        <span>{CONCEPTS[r.c].name}</span>
+                        <span style={{ fontWeight: 700 }}>{r.st.label}{r.pct !== null && ` · ${r.pct}%`}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              <div className="tag-eyebrow" style={{ marginBottom: 8 }}>Penguasaan per Konsep</div>
+              {conceptRows.map((r) => (
+                <div key={r.c} style={{ marginBottom: 12 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13 }}>
+                    <span>{CONCEPTS[r.c].name}</span>
+                    <span className="pill" style={{ background: toneColor[r.st.tone] + "22", color: toneColor[r.st.tone] }}>{r.st.label}{r.pct !== null && ` · ${r.pct}%`}</span>
+                  </div>
+                  <div className="bar-track"><div className="bar-fill" style={{ width: (r.pct || 0) + "%", background: toneColor[r.st.tone] }} /></div>
+                </div>
+              ))}
+
+              {(s.misconceptions || []).length > 0 && (
+                <div style={{ marginTop: 16 }}>
+                  <div className="tag-eyebrow">Log Miskonsepsi</div>
+                  {s.misconceptions.map((m, i) => <div className="misc-item" key={i}>{CONCEPTS[m.concept]?.name || m.concept}: <MathText text={m.tag} /></div>)}
+                </div>
+              )}
+
+              {(s.examHistory || []).length > 0 && (
+                <div style={{ marginTop: 16 }}>
+                  <div className="tag-eyebrow" style={{ marginBottom: 8 }}>Riwayat Ujian</div>
+                  <table>
+                    <thead><tr><th>Tanggal</th><th>Skor</th><th>Benar</th><th>Waktu</th></tr></thead>
+                    <tbody>
+                      {s.examHistory.slice(0, 10).map((h, i) => (
+                        <tr key={i}>
+                          <td>{h.date ? new Date(h.date).toLocaleDateString("id-ID", { day: "numeric", month: "short", year: "numeric" }) : "-"}</td>
+                          <td>{h.score ?? "-"}</td>
+                          <td>{h.correct !== undefined && h.total !== undefined ? `${h.correct}/${h.total}` : "-"}</td>
+                          <td>{formatDuration(h.durationSec)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+
+              <button className="btn-primary" style={{ marginTop: 18 }} onClick={() => setGuruSelectedStudent(null)}>Tutup</button>
+            </div>
+          </div>
+        );
+      })()}
+
       {mode === "landing" && (
         <div className="body-area">
           <div className="hero-card" style={{ textAlign: "center" }}>
@@ -1783,7 +1949,7 @@ function AppInner() {
             <div style={{ fontSize: 11, letterSpacing: ".06em", textTransform: "uppercase", opacity: 0.85, fontWeight: 700, marginBottom: 6 }}>Adaptive Concept-Based Intelligent Tutoring System</div>
             <h1 className="disp" style={{ fontSize: 27, margin: "10px 0" }}>Belajar Matematika Lebih Cerdas</h1>
             <p style={{ opacity: 0.92, fontSize: 14, maxWidth: 420, margin: "0 auto 22px" }}>
-              Sistem pembelajaran adaptif materi Eksponensial — lewat AI Tutor dan latihan yang menyesuaikan dirimu.
+              Sistem pembelajaran adaptif materi Eksponensial — lewat komik interaktif, AI Tutor, dan latihan yang menyesuaikan dirimu.
             </p>
             <div style={{ display: "flex", gap: 10, justifyContent: "center", flexWrap: "wrap" }}>
               <button className="btn-primary" style={{ background: "white", color: "var(--brand-dark)", boxShadow: "none" }} onClick={() => { setMode("auth"); setAuthTab("login"); setAuthRole("siswa"); setAuthError(""); }}><User size={15} /> Saya Siswa</button>
@@ -2382,7 +2548,7 @@ function AppInner() {
                   <div className="card">
                     <div className="tag-eyebrow">Koleksi Badge</div>
                     <h2 className="disp" style={{ fontSize: 19, marginBottom: 4 }}>{earnedBadges.length} dari {BADGES.length} badge terkumpul</h2>
-                    <p style={{ color: "var(--muted)", fontSize: 13, marginBottom: 16 }}>Kumpulkan badge dengan aktif belajar dan latihan soal.</p>
+                    <p style={{ color: "var(--muted)", fontSize: 13, marginBottom: 16 }}>Kumpulkan badge dengan aktif belajar dan membaca komik.</p>
                     <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(130px, 1fr))", gap: 12 }}>
                       {BADGES.map((b) => {
                         const earned = b.check(badgeStats);
@@ -2650,9 +2816,21 @@ function AppInner() {
                     {guruFilteredStudents.length > 0 && (
                       <div style={{ marginTop: 20 }}>
                         <div className="tag-eyebrow">Daftar siswa</div>
+                        <p style={{ fontSize: 11.5, color: "var(--muted)", marginTop: -4, marginBottom: 8 }}>Klik nama siswa untuk melihat profil &amp; analisis pembelajarannya.</p>
                         <table>
-                          <thead><tr><th>Nama</th><th>Kelas</th><th>Sekolah</th><th>Progress</th></tr></thead>
-                          <tbody>{guruFilteredStudents.map((s) => (<tr key={s.uid}><td>{s.name}</td><td>{s.kelas || "-"}</td><td>{s.sekolah || "-"}</td><td>{overallPctOf(s.attempts)}%</td></tr>))}</tbody>
+                          <thead><tr><th>Nama</th><th>Kelas</th><th>Sekolah</th><th>Progress</th><th>Nilai Latihan</th></tr></thead>
+                          <tbody>{guruFilteredStudents.map((s) => {
+                            const nl = latihanNilaiOf(s.attempts);
+                            return (
+                              <tr key={s.uid} style={{ cursor: "pointer" }} onClick={() => setGuruSelectedStudent(s)}>
+                                <td style={{ color: "var(--brand)", fontWeight: 600 }}>{s.name}</td>
+                                <td>{s.kelas || "-"}</td>
+                                <td>{s.sekolah || "-"}</td>
+                                <td>{overallPctOf(s.attempts)}%</td>
+                                <td>{nl ? `${nl.nilai} (${nl.jumlahSoal} soal)` : "Belum mengerjakan"}</td>
+                              </tr>
+                            );
+                          })}</tbody>
                         </table>
                       </div>
                     )}
