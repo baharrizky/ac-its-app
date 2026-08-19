@@ -411,6 +411,15 @@ function computeBadgeStats(attempts, statuses, streak) {
   return { correctCount, masteredCount, streak: streak || 0 };
 }
 
+// ---------------- Refleksi: saran pengembangan aplikasi berdasarkan pengalaman siswa ----------------
+const REFLECTION_QUESTIONS = [
+  { id: "r1", label: "Kemudahan Penggunaan", text: "Menurutmu, apakah aplikasi ini mudah digunakan? Bagian atau menu mana yang menurutmu masih membingungkan?" },
+  { id: "r2", label: "Fitur Paling Membantu", text: "Fitur apa (misalnya Tutor AI, Latihan, Ujian, Komik, dll.) yang paling membantu kamu belajar, dan kenapa?" },
+  { id: "r3", label: "Kendala Teknis", text: "Apakah kamu pernah mengalami error, aplikasi lambat/lag, atau bagian yang tidak berfungsi dengan baik? Jelaskan kapan dan di menu apa." },
+  { id: "r4", label: "Pengalaman di HP vs Laptop", text: "Bagaimana pengalamanmu menggunakan aplikasi ini di HP (mobile) dibandingkan di laptop/komputer?" },
+  { id: "r5", label: "Saran Pengembangan", text: "Apa saran atau fitur baru yang kamu usulkan supaya aplikasi ini lebih baik ke depannya?" },
+];
+
 // ---------------- Komponen: AI Tutor (chat) ----------------
 function AiTutor({ context, getPageImage, messages, setMessages, onClearHistory }) {
   const [input, setInput] = useState("");
@@ -483,7 +492,7 @@ function AiTutor({ context, getPageImage, messages, setMessages, onClearHistory 
 const NAV_RESTORABLE_SCREENS = new Set([
   "dashboard", "materiList", "materi", "latihanList", "latihan",
   "ujian", "progress", "leaderboard", "badges", "profil", "tutorAI",
-  "komikList", "komikChapter",
+  "komikList", "komikChapter", "refleksi",
 ]);
 function navStorageKey(uid) {
   return "acits_lastScreen_" + uid;
@@ -582,6 +591,14 @@ function AppInner() {
   const [editingProfil, setEditingProfil] = useState(false);
   const [tutorMessages, setTutorMessages] = useState([]);
   const [tutorFocusConcept, setTutorFocusConcept] = useState(null);
+
+  const [reflectionLoaded, setReflectionLoaded] = useState(false);
+  const [reflectionAnswers, setReflectionAnswers] = useState({});
+  const [reflectionSubmitting, setReflectionSubmitting] = useState(false);
+  const [reflectionSavedAt, setReflectionSavedAt] = useState(null);
+  const [reflectionError, setReflectionError] = useState("");
+  const [guruReflections, setGuruReflections] = useState([]);
+  const [guruReflectionsLoading, setGuruReflectionsLoading] = useState(false);
   const tutorGreetedRef = useRef(false);
   const [editName, setEditName] = useState("");
   const [editKelas, setEditKelas] = useState("");
@@ -757,6 +774,73 @@ function AppInner() {
     if (!authUser || !profile || profile.role !== "siswa" || !progressLoaded) return;
     setDoc(doc(db, "progress", authUser.uid), { attempts, misconceptions, poolIndex, completedQ, wrongQ, streak, lastActiveDate, tutorMessages: tutorMessages.slice(-30), examHistory: examHistory.slice(0, 10) }, { merge: true }).catch(() => {});
   }, [attempts, misconceptions, poolIndex, completedQ, wrongQ, streak, lastActiveDate, tutorMessages, examHistory, authUser, profile, progressLoaded]);
+
+  // ---------- Refleksi siswa: muat jawaban tersimpan (kalau pernah mengisi sebelumnya) ----------
+  useEffect(() => {
+    async function loadReflection() {
+      if (!authUser || !profile || profile.role !== "siswa") return;
+      try {
+        const snap = await getDoc(doc(db, "reflections", authUser.uid));
+        if (snap.exists()) {
+          const d = snap.data();
+          setReflectionAnswers(d.answers || {});
+          setReflectionSavedAt(d.updatedAt || null);
+        }
+      } catch (e) {
+        // Gagal memuat refleksi tersimpan -> lanjutkan dengan form kosong.
+      } finally {
+        setReflectionLoaded(true);
+      }
+    }
+    loadReflection();
+  }, [authUser, profile]);
+
+  async function submitReflection() {
+    if (!authUser || !profile) return;
+    const filled = REFLECTION_QUESTIONS.every((q) => (reflectionAnswers[q.id] || "").trim());
+    if (!filled) {
+      setReflectionError("Mohon isi semua pertanyaan sebelum mengirim refleksi.");
+      return;
+    }
+    setReflectionError("");
+    setReflectionSubmitting(true);
+    try {
+      await setDoc(doc(db, "reflections", authUser.uid), {
+        name: profile.name || "Siswa",
+        kelas: profile.kelas || "",
+        sekolah: profile.sekolah || "",
+        answers: reflectionAnswers,
+        updatedAt: serverTimestamp(),
+      }, { merge: true });
+      setReflectionSavedAt(new Date().toISOString());
+    } catch (e) {
+      setReflectionError("Gagal mengirim refleksi. Periksa koneksi internet kamu dan coba lagi.");
+    } finally {
+      setReflectionSubmitting(false);
+    }
+  }
+
+  async function loadGuruReflections() {
+    setGuruReflectionsLoading(true);
+    try {
+      const guruSekolah = (profile?.sekolah || "").trim();
+      if (!guruSekolah) {
+        setGuruReflections([]);
+        setGuruReflectionsLoading(false);
+        return;
+      }
+      const snap = await getDocs(query(collection(db, "reflections"), where("sekolah", "==", guruSekolah)));
+      const list = snap.docs.map((d) => ({ uid: d.id, ...d.data() }));
+      list.sort((a, b) => (a.name || "").localeCompare(b.name || ""));
+      setGuruReflections(list);
+    } catch (e) {}
+    setGuruReflectionsLoading(false);
+  }
+
+  useEffect(() => {
+    if (mode === "app" && profile?.role === "guru" && guruTab === "refleksi") loadGuruReflections();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mode, profile, guruTab]);
 
   // Simpan posisi halaman terakhir (screen aktif) ke localStorage supaya kalau halaman di-refresh,
   // siswa/guru tetap berada di halaman yang sama, bukan kembali ke Dashboard. Layar transien
@@ -1787,6 +1871,7 @@ function AppInner() {
                 <button className={"sidebar-navbtn" + (screen === "progress" ? " active" : "")} onClick={() => setScreen("progress")}><TrendingUp size={17} />Progress</button>
                 <button className={"sidebar-navbtn" + (screen === "leaderboard" ? " active" : "")} onClick={() => setScreen("leaderboard")}><Trophy size={17} />Peringkat</button>
                 <button className={"sidebar-navbtn" + (screen === "badges" ? " active" : "")} onClick={() => setScreen("badges")}><Award size={17} />Koleksi Badge</button>
+                <button className={"sidebar-navbtn" + (screen === "refleksi" ? " active" : "")} onClick={() => setScreen("refleksi")}><MessageCircle size={17} />Refleksi</button>
                 <button className={"sidebar-navbtn" + (screen === "profil" ? " active" : "")} onClick={() => setScreen("profil")}><User size={17} />Profil</button>
               </nav>
             )}
@@ -1798,6 +1883,7 @@ function AppInner() {
                 <button className={"sidebar-navbtn" + (guruTab === "ujian" && screen !== "profil" ? " active" : "")} onClick={() => { setGuruTab("ujian"); setGuruSelectedAttempt(null); setScreen("dashboard"); }}><Clock size={17} />Jawaban &amp; Waktu Ujian</button>
                 <button className={"sidebar-navbtn" + (guruTab === "materi" && screen !== "profil" ? " active" : "")} onClick={() => { setGuruTab("materi"); setScreen("dashboard"); }}><Database size={17} />Knowledge Base</button>
                 <button className={"sidebar-navbtn" + (guruTab === "kelolaKonten" && screen !== "profil" ? " active" : "")} onClick={() => { setGuruTab("kelolaKonten"); setScreen("dashboard"); }}><PenLine size={17} />Kelola Materi &amp; Soal</button>
+                <button className={"sidebar-navbtn" + (guruTab === "refleksi" && screen !== "profil" ? " active" : "")} onClick={() => { setGuruTab("refleksi"); setScreen("dashboard"); }}><MessageCircle size={17} />Refleksi Siswa</button>
                 {profile.isAdmin && (
                   <button className={"sidebar-navbtn" + (guruTab === "kodeAkses" && screen !== "profil" ? " active" : "")} onClick={() => { setGuruTab("kodeAkses"); setScreen("dashboard"); }}><LockIcon size={17} />Kode Akses</button>
                 )}
@@ -1825,6 +1911,7 @@ function AppInner() {
               <button className={"sidebar-navbtn" + (screen === "progress" ? " active" : "")} onClick={() => setScreen("progress")}><TrendingUp size={17} />Progress</button>
               <button className={"sidebar-navbtn" + (screen === "leaderboard" ? " active" : "")} onClick={() => setScreen("leaderboard")}><Trophy size={17} />Rank</button>
               <button className={"sidebar-navbtn" + (screen === "badges" ? " active" : "")} onClick={() => setScreen("badges")}><Award size={17} />Badge</button>
+              <button className={"sidebar-navbtn" + (screen === "refleksi" ? " active" : "")} onClick={() => setScreen("refleksi")}><MessageCircle size={17} />Refleksi</button>
               <button className={"sidebar-navbtn" + (screen === "profil" ? " active" : "")} onClick={() => setScreen("profil")}><User size={17} />Profil</button>
             </nav>
           )}
@@ -1835,6 +1922,7 @@ function AppInner() {
               <button className={"sidebar-navbtn" + (guruTab === "ujian" && screen !== "profil" ? " active" : "")} onClick={() => { setGuruTab("ujian"); setGuruSelectedAttempt(null); setScreen("dashboard"); }}><Clock size={17} />Jawaban</button>
               <button className={"sidebar-navbtn" + (guruTab === "materi" && screen !== "profil" ? " active" : "")} onClick={() => { setGuruTab("materi"); setScreen("dashboard"); }}><Database size={17} />KB</button>
               <button className={"sidebar-navbtn" + (guruTab === "kelolaKonten" && screen !== "profil" ? " active" : "")} onClick={() => { setGuruTab("kelolaKonten"); setScreen("dashboard"); }}><PenLine size={17} />Kelola Konten</button>
+              <button className={"sidebar-navbtn" + (guruTab === "refleksi" && screen !== "profil" ? " active" : "")} onClick={() => { setGuruTab("refleksi"); setScreen("dashboard"); }}><MessageCircle size={17} />Refleksi</button>
               {profile.isAdmin && (
                 <button className={"sidebar-navbtn" + (guruTab === "kodeAkses" && screen !== "profil" ? " active" : "")} onClick={() => { setGuruTab("kodeAkses"); setScreen("dashboard"); }}><LockIcon size={17} />Kode Akses</button>
               )}
@@ -2310,6 +2398,49 @@ function AppInner() {
                   </div>
                 )}
 
+                {progressLoaded && screen === "refleksi" && (
+                  <div className="card" style={{ maxWidth: 620, margin: "0 auto" }}>
+                    <div className="tag-eyebrow">Refleksi &amp; Saran Pengembangan</div>
+                    <h2 className="disp" style={{ fontSize: 19, marginBottom: 4 }}>Ceritakan pengalamanmu</h2>
+                    <p style={{ fontSize: 13, color: "var(--muted)", marginBottom: 16 }}>
+                      Jawabanmu akan dibaca oleh guru untuk membantu pengembangan aplikasi ini ke depannya. Isi dengan jujur ya!
+                    </p>
+
+                    {!reflectionLoaded && (
+                      <div style={{ display: "flex", alignItems: "center", gap: 8, color: "var(--muted)", fontSize: 13.5 }}><Loader2 size={15} className="spin" /> Memuat...</div>
+                    )}
+
+                    {reflectionLoaded && (
+                      <>
+                        {reflectionSavedAt && (
+                          <div className="ok-box" style={{ marginBottom: 16 }}>
+                            <CheckCircle2 size={17} /> Refleksi kamu sudah tersimpan. Kamu boleh mengubah jawaban dan mengirim ulang kapan saja.
+                          </div>
+                        )}
+                        {reflectionError && <div className="err-box">{reflectionError}</div>}
+
+                        {REFLECTION_QUESTIONS.map((q) => (
+                          <div key={q.id} style={{ marginBottom: 16 }}>
+                            <label style={{ fontSize: 13, fontWeight: 700, display: "block", marginBottom: 4 }}>{q.label}</label>
+                            <p style={{ fontSize: 12.5, color: "var(--muted)", marginBottom: 6 }}>{q.text}</p>
+                            <textarea
+                              rows={3}
+                              placeholder="Tulis jawabanmu di sini..."
+                              value={reflectionAnswers[q.id] || ""}
+                              onChange={(e) => setReflectionAnswers((a) => ({ ...a, [q.id]: e.target.value }))}
+                              style={{ width: "100%", fontSize: 13.5 }}
+                            />
+                          </div>
+                        ))}
+
+                        <button className="btn-primary" style={{ width: "100%", justifyContent: "center" }} disabled={reflectionSubmitting} onClick={submitReflection}>
+                          {reflectionSubmitting ? <Loader2 size={15} className="spin" /> : <Send size={15} />} Kirim Refleksi
+                        </button>
+                      </>
+                    )}
+                  </div>
+                )}
+
                 {progressLoaded && screen === "profil" && !editingProfil && (
                   <div className="card" style={{ textAlign: "center" }}>
                     <div className="avatar avatar-lg" style={{ margin: "0 auto 14px", background: AVATAR_GRADIENTS[profile.avatarColor || 0] }}>{(profile.name || "?").trim().charAt(0).toUpperCase()}</div>
@@ -2734,6 +2865,37 @@ function AppInner() {
                         </div>
                       </div>
                     )}
+                  </div>
+                )}
+
+                {guruTab === "refleksi" && (
+                  <div className="card">
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4, flexWrap: "wrap", gap: 8 }}>
+                      <div className="tag-eyebrow" style={{ marginBottom: 0 }}>Refleksi &amp; Saran Pengembangan Siswa</div>
+                      <button className="btn-ghost" onClick={loadGuruReflections} disabled={guruReflectionsLoading}>{guruReflectionsLoading ? <Loader2 size={14} className="spin" /> : <RefreshCw size={14} />} Muat ulang</button>
+                    </div>
+                    <p style={{ fontSize: 12.5, color: "var(--muted)", marginBottom: 14 }}>
+                      Rangkuman jawaban refleksi siswa tentang pengalaman menggunakan aplikasi ini, sebagai masukan untuk pengembangan.
+                    </p>
+                    {guruReflectionsLoading && <div style={{ display: "flex", alignItems: "center", gap: 8, color: "var(--muted)", fontSize: 13.5 }}><Loader2 size={15} className="spin" /> Memuat refleksi...</div>}
+                    {!guruReflectionsLoading && guruReflections.length === 0 && <p style={{ color: "var(--muted)", fontSize: 13.5 }}>Belum ada siswa yang mengisi refleksi.</p>}
+                    {!guruReflectionsLoading && guruReflections.map((r) => (
+                      <div key={r.uid} className="card" style={{ marginBottom: 12, background: "var(--paper-2)" }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10, flexWrap: "wrap" }}>
+                          <div className="avatar" style={{ width: 30, height: 30, fontSize: 12 }}>{(r.name || "?").trim().charAt(0).toUpperCase()}</div>
+                          <div style={{ fontWeight: 700, fontSize: 13.5 }}>{r.name || "Siswa"}</div>
+                          {r.kelas && <span className="pill" style={{ background: "var(--brand-light)", color: "var(--brand-dark)" }}>Kelas {r.kelas}</span>}
+                        </div>
+                        {REFLECTION_QUESTIONS.map((q) => (
+                          (r.answers?.[q.id]) ? (
+                            <div key={q.id} style={{ marginBottom: 8 }}>
+                              <div style={{ fontSize: 11.5, fontWeight: 700, color: "var(--muted)", marginBottom: 2 }}>{q.label}</div>
+                              <div style={{ fontSize: 13, lineHeight: 1.5 }}>{r.answers[q.id]}</div>
+                            </div>
+                          ) : null
+                        ))}
+                      </div>
+                    ))}
                   </div>
                 )}
 
