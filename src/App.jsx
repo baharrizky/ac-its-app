@@ -35,6 +35,8 @@ const CONCEPTS = {
   E11: { name: "Persamaan Eksponen",            short: "aˣ=aʸ",     prereq: ["E1", "E2", "E3", "E4", "E6", "E7"] },
 };
 const CONCEPT_ORDER = ["E1", "E2", "E3", "E4", "E5", "E6", "E7", "E8", "E9", "E10", "E11"];
+const KELAS_OPTIONS = Array.from({ length: 10 }, (_, i) => `X.${i + 1}`);
+const SEKOLAH_OPTIONS = ["SMAN 5 Kota Jambi"];
 const EMPTY_ATTEMPTS = Object.fromEntries(CONCEPT_ORDER.map((c) => [c, []]));
 const EMPTY_POOLIDX = Object.fromEntries(CONCEPT_ORDER.map((c) => [c, 0]));
 
@@ -1984,8 +1986,22 @@ function AppInner() {
                 <div style={{ marginBottom: 10 }}><input type="text" placeholder="Nama lengkap" value={authName} onChange={(e) => setAuthName(e.target.value)} /></div>
                 {authRole === "siswa" && (
                   <>
-                    <div style={{ marginBottom: 10 }}><input type="text" placeholder="Kelas (contoh: 9A, IX-A)" value={authKelas} onChange={(e) => setAuthKelas(e.target.value)} /></div>
-                    <div style={{ marginBottom: 10 }}><input type="text" placeholder="Asal sekolah" value={authSekolah} onChange={(e) => setAuthSekolah(e.target.value)} /></div>
+                    <div style={{ marginBottom: 10 }}>
+                      <select value={authKelas} onChange={(e) => setAuthKelas(e.target.value)}>
+                        <option value="">Pilih kelas</option>
+                        {KELAS_OPTIONS.map((k) => (
+                          <option key={k} value={k}>{k}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div style={{ marginBottom: 10 }}>
+                      <select value={authSekolah} onChange={(e) => setAuthSekolah(e.target.value)}>
+                        <option value="">Pilih asal sekolah</option>
+                        {SEKOLAH_OPTIONS.map((s) => (
+                          <option key={s} value={s}>{s}</option>
+                        ))}
+                      </select>
+                    </div>
                   </>
                 )}
                 {authRole === "guru" && (
