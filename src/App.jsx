@@ -695,7 +695,6 @@ function AppInner() {
   const [latihanHintCount, setLatihanHintCount] = useState(0);
   const latihanQTimerRef = useRef(null);
   const EXAM_LENGTH = 15;
-  const [examEssayConfirmed, setExamEssayConfirmed] = useState(false);
 
   // ---------- Unggah Jawaban Esai (langsung ke Firestore, tanpa Google Form/Drive) ----------
   // Siswa memfoto jawaban tulis tangannya, foto dikompresi di browser (jadi file kecil ~100-250KB)
@@ -734,6 +733,7 @@ function AppInner() {
   const [guruLoading, setGuruLoading] = useState(false);
   const [guruSelectedAttempt, setGuruSelectedAttempt] = useState(null);
   const [guruProgressConcept, setGuruProgressConcept] = useState("E1");
+  const [guruAnalyticsConcept, setGuruAnalyticsConcept] = useState(null); // konsep yg sedang di-drill-down di tab Analitik
   const [guruSelectedStudent, setGuruSelectedStudent] = useState(null);
 
   // ---------- Admin: Kode Akses Guru ----------
@@ -1274,7 +1274,6 @@ function AppInner() {
     setExamLocked(false);
     setExamLeaveWarning(false);
     setExamStartTime(null);
-    setExamEssayConfirmed(false);
     try {
       if (document.fullscreenElement && document.exitFullscreen) document.exitFullscreen().catch(() => {});
     } catch (e) {}
@@ -1526,6 +1525,15 @@ function AppInner() {
     if (mode === "app" && profile?.role === "guru" && profile?.isAdmin && guruTab === "kodeAkses") loadAccessCodes();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mode, profile, guruTab]);
+
+  // Saat tab Analitik dibuka (atau data/filter kelas berubah), default-kan drill-down ke materi
+  // yang paling parah (total miskonsepsi terbanyak) supaya guru langsung lihat yg paling penting.
+  useEffect(() => {
+    if (guruTab !== "analitik") return;
+    const valid = misconceptionStats.some((r) => r.concept === guruAnalyticsConcept);
+    if (!valid) setGuruAnalyticsConcept(misconceptionStats[0]?.concept || null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [guruTab, misconceptionStats]);
 
   // ---------- Unggah Jawaban Esai: kompresi gambar di browser lalu simpan ke Firestore ----------
   // Mengubah 1 file foto menjadi dataURL JPEG yang sudah dikecilkan (resize + turunkan kualitas
@@ -1885,6 +1893,26 @@ function AppInner() {
     () => guruFilteredStudents.flatMap((s) => (s.misconceptions || []).map((m) => ({ ...m, student: s.name }))),
     [guruFilteredStudents]
   );
+  // Rekap miskonsepsi per materi (untuk heatmap/grafik Analitik): total per konsep + rincian
+  // tag yg paling sering muncul di konsep itu, diurutkan dari yg paling parah/banyak.
+  const misconceptionStats = useMemo(() => {
+    const rows = CONCEPT_ORDER.map((c) => {
+      const items = allMisconceptions.filter((m) => m.concept === c);
+      const counts = {};
+      items.forEach((m) => { counts[m.tag] = (counts[m.tag] || 0) + 1; });
+      const tags = Object.entries(counts).map(([tag, n]) => ({ tag, n })).sort((a, b) => b.n - a.n);
+      return { concept: c, name: CONCEPTS[c].name, short: CONCEPTS[c].short, total: items.length, tags };
+    }).filter((r) => r.total > 0);
+    rows.sort((a, b) => b.total - a.total);
+    return rows;
+  }, [allMisconceptions]);
+  const misconceptionMax = misconceptionStats.length ? misconceptionStats[0].total : 0;
+  // Fungsi warna "heatmap": makin besar rasio thd yg paling parah, makin pekat/merah warnanya.
+  function heatColor(ratio) {
+    if (ratio >= 0.66) return "#F43F5E"; // parah — rose kuat
+    if (ratio >= 0.33) return "#FB923C"; // sedang — amber/oranye
+    return "#FBBF24"; // ringan — kuning
+  }
   const guruExamAttempts = useMemo(
     () =>
       guruFilteredStudents
@@ -3208,20 +3236,77 @@ function AppInner() {
 
                 {guruTab === "analitik" && (
                   <div className="card">
-                    <div className="tag-eyebrow">Heatmap miskonsepsi (seluruh siswa)</div>
-                    {allMisconceptions.length === 0 && <p style={{ fontSize: 13.5, color: "var(--muted)" }}>Belum ada miskonsepsi terdeteksi.</p>}
-                    {CONCEPT_ORDER.map((c) => {
-                      const items = allMisconceptions.filter((m) => m.concept === c);
-                      if (items.length === 0) return null;
-                      const counts = {};
-                      items.forEach((m) => { counts[m.tag] = (counts[m.tag] || 0) + 1; });
-                      return (
-                        <div key={c} style={{ marginBottom: 12 }}>
-                          <div style={{ fontWeight: 600, fontSize: 13.5, marginBottom: 4 }}>{CONCEPTS[c].name}</div>
-                          {Object.entries(counts).map(([tag, n]) => (<div className="misc-item" key={tag} style={{ display: "inline-block", marginRight: 6 }}>{tag} × {n}</div>))}
+                    <div className="tag-eyebrow">Heatmap Miskonsepsi — per Materi</div>
+                    {misconceptionStats.length === 0 && <p style={{ fontSize: 13.5, color: "var(--muted)" }}>Belum ada miskonsepsi terdeteksi.</p>}
+
+                    {misconceptionStats.length > 0 && (
+                      <>
+                        <h2 className="disp" style={{ fontSize: 17, marginBottom: 4 }}>Materi mana yang paling bermasalah?</h2>
+                        <p style={{ fontSize: 12, color: "var(--muted)", marginBottom: 14 }}>
+                          Diurutkan dari yang paling banyak miskonsepsinya. Klik salah satu batang untuk melihat rincian jenis kesalahannya.
+                        </p>
+                        <ResponsiveContainer width="100%" height={Math.max(160, misconceptionStats.length * 34)}>
+                          <BarChart
+                            data={misconceptionStats}
+                            layout="vertical"
+                            margin={{ top: 4, right: 30, left: 4, bottom: 4 }}
+                            onClick={(state) => { const c = state?.activePayload?.[0]?.payload?.concept; if (c) setGuruAnalyticsConcept(c); }}
+                          >
+                            <CartesianGrid strokeDasharray="3 3" horizontal={false} />
+                            <XAxis type="number" allowDecimals={false} tick={{ fontSize: 11 }} />
+                            <YAxis type="category" dataKey="name" width={150} tick={{ fontSize: 11.5 }} />
+                            <Tooltip formatter={(v) => [`${v} miskonsepsi`, "Total"]} cursor={{ fill: "rgba(124,92,252,0.06)" }} />
+                            <Bar dataKey="total" radius={[0, 6, 6, 0]} cursor="pointer">
+                              {misconceptionStats.map((r) => (
+                                <Cell
+                                  key={r.concept}
+                                  fill={heatColor(misconceptionMax ? r.total / misconceptionMax : 0)}
+                                  stroke={r.concept === guruAnalyticsConcept ? "var(--ink)" : "none"}
+                                  strokeWidth={r.concept === guruAnalyticsConcept ? 1.5 : 0}
+                                />
+                              ))}
+                            </Bar>
+                          </BarChart>
+                        </ResponsiveContainer>
+
+                        <div className="tag-eyebrow" style={{ marginTop: 20, marginBottom: 8 }}>Rincian jenis kesalahan per materi</div>
+                        <div style={{ display: "flex", flexWrap: "wrap", marginBottom: 14 }}>
+                          {misconceptionStats.map((r) => (
+                            <button
+                              key={r.concept}
+                              className={"tabbtn" + (guruAnalyticsConcept === r.concept ? " active" : "")}
+                              onClick={() => setGuruAnalyticsConcept(r.concept)}
+                            >
+                              {r.short} <span style={{ opacity: 0.75 }}>({r.total})</span>
+                            </button>
+                          ))}
                         </div>
-                      );
-                    })}
+
+                        {(() => {
+                          const focus = misconceptionStats.find((r) => r.concept === guruAnalyticsConcept);
+                          if (!focus) return null;
+                          const topTag = focus.tags[0]?.n || 1;
+                          return (
+                            <div className="card" style={{ background: "var(--paper-2)" }}>
+                              <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 2 }}>{focus.name}</div>
+                              <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 12 }}>{focus.total} total miskonsepsi tercatat pada materi ini</div>
+                              {focus.tags.map(({ tag, n }) => {
+                                const pct = Math.round((n / topTag) * 100);
+                                return (
+                                  <div key={tag} style={{ marginBottom: 10 }}>
+                                    <div style={{ display: "flex", justifyContent: "space-between", gap: 10, fontSize: 12.5, marginBottom: 3 }}>
+                                      <span><MathText text={tag} /></span>
+                                      <span style={{ fontWeight: 700, whiteSpace: "nowrap" }}>× {n}</span>
+                                    </div>
+                                    <div className="bar-track"><div className="bar-fill" style={{ width: pct + "%", background: heatColor(n / topTag) }} /></div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          );
+                        })()}
+                      </>
+                    )}
                   </div>
                 )}
 
