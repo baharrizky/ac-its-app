@@ -1526,14 +1526,7 @@ function AppInner() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mode, profile, guruTab]);
 
-  // Saat tab Analitik dibuka (atau data/filter kelas berubah), default-kan drill-down ke materi
-  // yang paling parah (total miskonsepsi terbanyak) supaya guru langsung lihat yg paling penting.
-  useEffect(() => {
-    if (guruTab !== "analitik") return;
-    const valid = misconceptionStats.some((r) => r.concept === guruAnalyticsConcept);
-    if (!valid) setGuruAnalyticsConcept(misconceptionStats[0]?.concept || null);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [guruTab, misconceptionStats]);
+
 
   // ---------- Unggah Jawaban Esai: kompresi gambar di browser lalu simpan ke Firestore ----------
   // Mengubah 1 file foto menjadi dataURL JPEG yang sudah dikecilkan (resize + turunkan kualitas
@@ -1913,6 +1906,14 @@ function AppInner() {
     if (ratio >= 0.33) return "#FB923C"; // sedang — amber/oranye
     return "#FBBF24"; // ringan — kuning
   }
+  // Saat tab Analitik dibuka (atau data/filter kelas berubah), default-kan drill-down ke materi
+  // yang paling parah (total miskonsepsi terbanyak) supaya guru langsung lihat yg paling penting.
+  useEffect(() => {
+    if (guruTab !== "analitik") return;
+    const valid = misconceptionStats.some((r) => r.concept === guruAnalyticsConcept);
+    if (!valid) setGuruAnalyticsConcept(misconceptionStats[0]?.concept || null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [guruTab, misconceptionStats]);
   const guruExamAttempts = useMemo(
     () =>
       guruFilteredStudents
