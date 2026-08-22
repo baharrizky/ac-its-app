@@ -401,6 +401,56 @@ function computeXp(attempts) {
   });
   return xp;
 }
+// XP dari Ujian: diambil dari skor ujian TERBAIK yang pernah dicapai (bukan dijumlah semua percobaan,
+// supaya tidak bisa "digrind" dengan mengulang ujian berkali-kali) — skor 0-100% dikonversi 1:1 jadi 0-100 XP.
+function computeExamXp(examHistory) {
+  if (!examHistory || examHistory.length === 0) return 0;
+  const best = examHistory.reduce((max, h) => Math.max(max, h.score || 0), 0);
+  return Math.round(best);
+}
+// XP total (dipakai utk Level, Badge, dan Papan Peringkat) = XP Latihan + XP Ujian,
+// supaya peringkat kelas mencerminkan performa di Latihan Soal MAUPUN Ujian, bukan latihan saja.
+function computeTotalXp(attempts, examHistory) {
+  return computeXp(attempts) + computeExamXp(examHistory);
+}
+
+// ---------------- Rekonstruksi historis mistakeQ/hintQ dari data lama ----------------
+// attempts[c] (skor per soal yg selesai) dan completedQ[c] (indeks soal yg selesai) selalu
+// ditambah berbarengan & berurutan tiap kali 1 soal selesai (lihat submitAnswer &
+// afterDiagnosisCorrectOrResolved), jadi attempts[c][i] adalah skor utk soal completedQ[c][i].
+// Skor < 1.0 berarti soal itu sempat dijawab salah (dan otomatis pernah melihat hint, karena
+// pada alur latihan, hint SELALU ditampilkan begitu jawaban salah, sebelum siswa boleh coba lagi).
+// Dengan begini, riwayat "siapa salah / minta bantuan di soal mana" bisa langsung terisi dari
+// data latihan siswa yang sudah ada sebelumnya, tanpa menunggu aktivitas baru.
+function deriveMistakeHintFromHistory(attempts, completedQ) {
+  const mistakeQ = {};
+  const hintQ = {};
+  CONCEPT_ORDER.forEach((c) => {
+    const done = completedQ[c] || [];
+    const scores = attempts[c] || [];
+    const n = Math.min(done.length, scores.length);
+    for (let i = 0; i < n; i++) {
+      const idx = done[i];
+      const score = scores[i];
+      if (score < 1.0) {
+        if (!mistakeQ[c]) mistakeQ[c] = [];
+        if (!mistakeQ[c].includes(idx)) mistakeQ[c].push(idx);
+        if (!hintQ[c]) hintQ[c] = [];
+        if (!hintQ[c].includes(idx)) hintQ[c].push(idx);
+      }
+    }
+  });
+  return { mistakeQ, hintQ };
+}
+// Gabungkan 2 map {concept: [idx,...]} tanpa duplikat — dipakai utk menggabungkan riwayat lama
+// (hasil rekonstruksi) dengan pencatatan baru (real-time) supaya keduanya tetap konsisten.
+function mergeQMaps(a, b) {
+  const out = {};
+  CONCEPT_ORDER.forEach((c) => {
+    out[c] = Array.from(new Set([...(a[c] || []), ...(b[c] || [])]));
+  });
+  return out;
+}
 function computeLevel(xp) {
   const perLevel = 200;
   const level = Math.floor(xp / perLevel) + 1;
@@ -766,8 +816,12 @@ function AppInner() {
           setPoolIndex({ ...EMPTY_POOLIDX, ...(d.poolIndex || {}) });
           setCompletedQ(d.completedQ || {});
           setWrongQ(d.wrongQ || {});
-          setMistakeQ(d.mistakeQ || {});
-          setHintQ(d.hintQ || {});
+          // Gabungkan riwayat mistakeQ/hintQ tersimpan dengan hasil rekonstruksi dari data latihan
+          // lama (attempts + completedQ), supaya progress siswa yang sudah pernah belajar sebelum
+          // fitur ini ada tetap langsung terisi, bukan kosong.
+          const derivedQH = deriveMistakeHintFromHistory(d.attempts || {}, d.completedQ || {});
+          setMistakeQ(mergeQMaps(d.mistakeQ || {}, derivedQH.mistakeQ));
+          setHintQ(mergeQMaps(d.hintQ || {}, derivedQH.hintQ));
           setTutorMessages(d.tutorMessages || []);
           setExamHistory(d.examHistory || []);
           setLatihanTimeSec(d.latihanTimeSec || 0);
@@ -1292,7 +1346,7 @@ function AppInner() {
     setTutorMessages((m) => [...m, greet]);
   }, [screen, tutorFocusConcept]);
   useEffect(() => { if (screen !== "profil") setEditingProfil(false); }, [screen]);
-  const xp = useMemo(() => computeXp(attempts), [attempts]);
+  const xp = useMemo(() => computeTotalXp(attempts, examHistory), [attempts, examHistory]);
   const { level, xpInLevel, xpTarget } = useMemo(() => computeLevel(xp), [xp]);
   const badgeStats = useMemo(() => computeBadgeStats(attempts, statuses, streak), [attempts, statuses, streak]);
   const earnedBadges = useMemo(() => BADGES.filter((b) => b.check(badgeStats)), [badgeStats]);
@@ -1317,7 +1371,7 @@ function AppInner() {
         const u = uDoc.data();
         const progSnap = await getDoc(doc(db, "progress", uDoc.id));
         const prog = progSnap.exists() ? progSnap.data() : {};
-        const sXp = computeXp(prog.attempts || EMPTY_ATTEMPTS);
+        const sXp = computeTotalXp(prog.attempts || EMPTY_ATTEMPTS, prog.examHistory || []);
         list.push({ uid: uDoc.id, name: u.name || "Siswa", xp: sXp, streak: prog.streak || 0, level: computeLevel(sXp).level });
       }
       list.sort((a, b) => b.xp - a.xp);
@@ -1437,7 +1491,11 @@ function AppInner() {
         if (guruKelasAjar.length > 0 && !guruKelasAjar.includes(u.kelas)) continue;
         const progSnap = await getDoc(doc(db, "progress", uDoc.id));
         const prog = progSnap.exists() ? progSnap.data() : { attempts: EMPTY_ATTEMPTS, misconceptions: [], examHistory: [] };
-        list.push({ uid: uDoc.id, name: u.name || "Siswa", kelas: u.kelas, sekolah: u.sekolah, attempts: prog.attempts || EMPTY_ATTEMPTS, misconceptions: prog.misconceptions || [], examHistory: prog.examHistory || [], streak: prog.streak || 0, latihanTimeSec: prog.latihanTimeSec || 0, latihanHintCount: prog.latihanHintCount || 0, latihanViolations: prog.latihanViolations || 0, mistakeQ: prog.mistakeQ || {}, hintQ: prog.hintQ || {} });
+        // Sama seperti di sisi siswa: gabungkan mistakeQ/hintQ tersimpan dengan hasil rekonstruksi
+        // dari data latihan lama, supaya "Progress per Soal" langsung terisi utk siswa yang sudah
+        // pernah latihan sebelum fitur pencatatan per-soal ini ada.
+        const derivedQH = deriveMistakeHintFromHistory(prog.attempts || EMPTY_ATTEMPTS, prog.completedQ || {});
+        list.push({ uid: uDoc.id, name: u.name || "Siswa", kelas: u.kelas, sekolah: u.sekolah, attempts: prog.attempts || EMPTY_ATTEMPTS, misconceptions: prog.misconceptions || [], examHistory: prog.examHistory || [], streak: prog.streak || 0, latihanTimeSec: prog.latihanTimeSec || 0, latihanHintCount: prog.latihanHintCount || 0, latihanViolations: prog.latihanViolations || 0, mistakeQ: mergeQMaps(prog.mistakeQ || {}, derivedQH.mistakeQ), hintQ: mergeQMaps(prog.hintQ || {}, derivedQH.hintQ) });
       }
       setGuruStudents(list);
     } catch (e) {}
@@ -1754,7 +1812,7 @@ function AppInner() {
   // ---------- Peringkat (leaderboard) versi guru: per kelas yang sedang difilter ----------
   const guruLeaderboard = useMemo(() => {
     const list = guruFilteredStudents.map((s) => {
-      const sXp = computeXp(s.attempts);
+      const sXp = computeTotalXp(s.attempts, s.examHistory);
       return { uid: s.uid, name: s.name, kelas: s.kelas, xp: sXp, streak: s.streak || 0, level: computeLevel(sXp).level };
     });
     list.sort((a, b) => b.xp - a.xp);
@@ -1896,7 +1954,7 @@ function AppInner() {
 
       {profile?.role === "guru" && guruSelectedStudent && (() => {
         const s = guruSelectedStudent;
-        const sXp = computeXp(s.attempts);
+        const sXp = computeTotalXp(s.attempts, s.examHistory);
         const sLevel = computeLevel(sXp);
         const nl = latihanNilaiOf(s.attempts);
         const conceptRows = CONCEPT_ORDER.map((c) => {
@@ -2665,7 +2723,7 @@ function AppInner() {
                   <div className="card">
                     <div className="tag-eyebrow">Peringkat Siswa {profile?.kelas ? `— Kelas ${profile.kelas}` : ""}</div>
                     <h2 className="disp" style={{ fontSize: 19, marginBottom: 4 }}>Papan Peringkat</h2>
-                    <p style={{ fontSize: 12, color: "var(--muted)", marginBottom: 14 }}>Peringkat hanya dibandingkan dengan teman sekelasmu, bukan seluruh siswa.</p>
+                    <p style={{ fontSize: 12, color: "var(--muted)", marginBottom: 14 }}>Peringkat hanya dibandingkan dengan teman sekelasmu (bukan seluruh siswa), dihitung dari XP Latihan Soal + skor terbaik Ujian.</p>
                     {(!profile?.kelas || !profile?.sekolah) && (
                       <p style={{ color: "var(--muted)", fontSize: 13.5 }}>Lengkapi data kelas &amp; sekolah di profil kamu dulu untuk melihat papan peringkat kelas.</p>
                     )}
@@ -3046,7 +3104,7 @@ function AppInner() {
                     <div className="tag-eyebrow">Papan Peringkat — {guruKelasFilter === "semua" ? "Semua Kelas" : `Kelas ${guruKelasFilter}`}</div>
                     <h2 className="disp" style={{ fontSize: 19, marginBottom: 4 }}>Peringkat Siswa</h2>
                     <p style={{ fontSize: 12, color: "var(--muted)", marginBottom: 14 }}>
-                      Gunakan filter kelas di atas untuk melihat peringkat kelas tertentu. Berdasarkan XP yang sama dengan yang dilihat siswa.
+                      Gunakan filter kelas di atas untuk melihat peringkat kelas tertentu. XP dihitung dari Latihan Soal + skor terbaik Ujian, sama seperti yang dilihat siswa.
                     </p>
                     {guruLeaderboard.length === 0 && <p style={{ fontSize: 13.5, color: "var(--muted)" }}>Belum ada siswa pada kelas ini, atau belum ada aktivitas belajar.</p>}
                     {guruLeaderboard.map((s, i) => (
