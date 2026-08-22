@@ -9,7 +9,7 @@ import {
   GraduationCap, LayoutDashboard, BookOpen, PenLine, TrendingUp, User,
   Lightbulb, CheckCircle2, XCircle, AlertTriangle, ArrowRight, ArrowLeft, LogOut, Database, Users,
   Mail, Lock, Loader2, RefreshCw, MessageCircle, Sparkles, ClipboardList, Lock as LockIcon,
-  ZoomIn, ZoomOut, Send, Clock, Trophy, Award, ListChecks, KeyRound,
+  ZoomIn, ZoomOut, Send, Clock, Trophy, Award, ListChecks, KeyRound, FileText,
 } from "lucide-react";
 import { auth, db } from "./firebase";
 import {
@@ -697,18 +697,26 @@ function AppInner() {
   const EXAM_LENGTH = 15;
   const [examEssayConfirmed, setExamEssayConfirmed] = useState(false);
 
-  // ---------- Form Esai (Google Form milik guru, per sekolah) ----------
-  // Menggantikan mekanisme lama (siswa tempel link Drive pribadi). Sekarang siswa mengunggah
-  // jawaban esai lewat Google Form yang dibuat & dimiliki guru (file masuk ke Drive guru,
-  // siswa lain tidak bisa melihat file siswa lain). Guru juga menyimpan link folder Drive
-  // tempat file hasil unggahan itu tersimpan, supaya guru bisa langsung membuka & mengecek
-  // jawaban siswa tanpa perlu membuka Form/spreadsheet respons satu per satu.
-  const [essayFormUrl, setEssayFormUrl] = useState("");
-  const [essayFormUrlInput, setEssayFormUrlInput] = useState("");
-  const [essayDriveFolderUrl, setEssayDriveFolderUrl] = useState("");
-  const [essayDriveFolderUrlInput, setEssayDriveFolderUrlInput] = useState("");
-  const [essayFormSaving, setEssayFormSaving] = useState(false);
-  const [essayFormMsg, setEssayFormMsg] = useState("");
+  // ---------- Unggah Jawaban Esai (langsung ke Firestore, tanpa Google Form/Drive) ----------
+  // Siswa memfoto jawaban tulis tangannya, foto dikompresi di browser (jadi file kecil ~100-250KB)
+  // lalu disimpan sebagai base64 di 1 dokumen Firestore khusus per percobaan ujian (koleksi
+  // "essayAnswers"), terpisah dari dokumen "progress" siswa supaya tidak kena limit 1MB per
+  // dokumen Firestore. Ini TIDAK memakai Firebase Storage (yang sejak 2026 wajib paket Blaze/
+  // kartu kredit) — hanya Firestore yang sudah dipakai app ini di paket gratis (Spark).
+  // Setiap lampiran boleh berupa foto (dikompres otomatis) ATAU file PDF (tidak bisa dikompres
+  // di browser, jadi dipakai apa adanya — karena itu ada batas ukuran gabungan MAX_ESSAY_TOTAL_BYTES).
+  const MAX_ESSAY_PAGES = 4;
+  const MAX_ESSAY_TOTAL_BYTES = 900000; // total gabungan semua lampiran, disisakan ruang dari limit 1MB/dokumen Firestore
+  const MAX_PDF_BYTES = 700000;
+  const [essayImages, setEssayImages] = useState([]); // [{type:"image"|"pdf", dataUrl, sizeKb, name}, ...] lampiran siswa (belum dikirim)
+  const [essayImgProcessing, setEssayImgProcessing] = useState(false);
+  const [essayImgError, setEssayImgError] = useState("");
+  const [essaySubmitting, setEssaySubmitting] = useState(false);
+  // ---------- Guru: lihat foto jawaban esai siswa (dari koleksi essayAnswers) ----------
+  const [essayViewImages, setEssayViewImages] = useState(null); // null = belum dimuat
+  const [essayViewLoading, setEssayViewLoading] = useState(false);
+  const [essayViewError, setEssayViewError] = useState("");
+  const [zoomedEssayImage, setZoomedEssayImage] = useState(null);
 
   // ---------- Navigasi ----------
   const [screen, setScreen] = useState("dashboard"); // dashboard | materi | latihan | diagnosis | hint | ujian | ujianSoal | ujianHasil | progress | profil | komikList | komikChapter
@@ -1246,7 +1254,7 @@ function AppInner() {
     setExamCurrent(idx);
   }
 
-  function finishExam(essaySubmitted) {
+  function finishExam(essaySubmitted, essayAnswerId) {
     let correct = 0;
     const details = examQuestions.map((q, i) => {
       const ansIdx = examAnswers[i];
@@ -1259,7 +1267,7 @@ function AppInner() {
     const durationSec = examStartTime ? Math.round((Date.now() - examStartTime) / 1000) : null;
     const result = {
       score, correct, total, date: new Date().toISOString(), details, durationSec, violations: examViolations,
-      essaySubmitted: !!essaySubmitted,
+      essaySubmitted: !!essaySubmitted, essayAnswerId: essayAnswerId || null,
     };
     setExamResult(result);
     setExamHistory((h) => [result, ...h].slice(0, 10));
@@ -1271,10 +1279,6 @@ function AppInner() {
       if (document.fullscreenElement && document.exitFullscreen) document.exitFullscreen().catch(() => {});
     } catch (e) {}
     setScreen("ujianHasil");
-  }
-
-  function submitExamEssayAndFinish() {
-    finishExam(true);
   }
 
   async function logout() {
@@ -1523,69 +1527,165 @@ function AppInner() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mode, profile, guruTab]);
 
-  // ---------- Form Esai: slug sekolah dipakai sebagai ID dokumen settings ----------
-  function sekolahSlug(s) {
-    return (s || "").trim().toUpperCase().replace(/\s+/g, "");
+  // ---------- Unggah Jawaban Esai: kompresi gambar di browser lalu simpan ke Firestore ----------
+  // Mengubah 1 file foto menjadi dataURL JPEG yang sudah dikecilkan (resize + turunkan kualitas
+  // bertahap) sampai di bawah target ukuran, supaya aman disimpan sebagai base64 di Firestore.
+  function compressImageFile(file, { maxDim = 1400, targetBytes = 200000 } = {}) {
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      const reader = new FileReader();
+      reader.onerror = () => reject(new Error("Gagal membaca file."));
+      reader.onload = () => {
+        img.onerror = () => reject(new Error("File bukan gambar yang valid."));
+        img.onload = () => {
+          let w = img.width, h = img.height;
+          if (w > maxDim || h > maxDim) {
+            const ratio = Math.min(maxDim / w, maxDim / h);
+            w = Math.round(w * ratio);
+            h = Math.round(h * ratio);
+          }
+          const canvas = document.createElement("canvas");
+          canvas.width = w;
+          canvas.height = h;
+          const ctx = canvas.getContext("2d");
+          ctx.fillStyle = "#fff";
+          ctx.fillRect(0, 0, w, h);
+          ctx.drawImage(img, 0, 0, w, h);
+          let quality = 0.72;
+          let dataUrl = canvas.toDataURL("image/jpeg", quality);
+          let tries = 0;
+          while (dataUrl.length * 0.75 > targetBytes && quality > 0.3 && tries < 6) {
+            quality -= 0.12;
+            dataUrl = canvas.toDataURL("image/jpeg", quality);
+            tries++;
+          }
+          resolve({ dataUrl, sizeKb: Math.round((dataUrl.length * 0.75) / 1024) });
+        };
+        img.src = reader.result;
+      };
+      reader.readAsDataURL(file);
+    });
   }
 
-  function isValidGoogleFormLink(link) {
-    return /^https:\/\/docs\.google\.com\/forms\//.test(link.trim());
+  // PDF tidak bisa di-resize/dikompres gampang lewat canvas seperti foto, jadi file dipakai
+  // apa adanya (hanya dibaca sebagai base64) — makanya ukurannya dibatasi lebih ketat.
+  function readPdfFile(file) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onerror = () => reject(new Error("Gagal membaca file PDF."));
+      reader.onload = () => {
+        const dataUrl = reader.result;
+        resolve({ type: "pdf", dataUrl, name: file.name, sizeKb: Math.round((dataUrl.length * 0.75) / 1024) });
+      };
+      reader.readAsDataURL(file);
+    });
   }
 
-  function isValidDriveFolderLink(link) {
-    return /^https:\/\/drive\.google\.com\//.test(link.trim());
+  function currentEssayTotalBytes(list) {
+    return list.reduce((sum, im) => sum + Math.round(im.dataUrl.length * 0.75), 0);
   }
 
-  async function loadEssayFormUrl(sekolahName) {
-    const slug = sekolahSlug(sekolahName);
-    if (!slug) return;
+  async function addEssayImageFiles(fileList) {
+    setEssayImgError("");
+    const files = Array.from(fileList || []);
+    if (!files.length) return;
+    const room = MAX_ESSAY_PAGES - essayImages.length;
+    if (room <= 0) {
+      setEssayImgError(`Maksimal ${MAX_ESSAY_PAGES} lampiran per pengumpulan.`);
+      return;
+    }
+    setEssayImgProcessing(true);
     try {
-      const snap = await getDoc(doc(db, "essayFormSettings", slug));
-      const data = snap.exists() ? snap.data() : {};
-      const url = data.formUrl || "";
-      const folderUrl = data.driveFolderUrl || "";
-      setEssayFormUrl(url);
-      setEssayFormUrlInput(url);
-      setEssayDriveFolderUrl(folderUrl);
-      setEssayDriveFolderUrlInput(folderUrl);
+      const toProcess = files.slice(0, room);
+      let runningTotal = currentEssayTotalBytes(essayImages);
+      const results = [];
+      let skippedTooBig = 0;
+      let skippedUnsupported = 0;
+      for (const f of toProcess) {
+        let item = null;
+        if (f.type && f.type.startsWith("image/")) {
+          item = await compressImageFile(f);
+          item = { type: "image", ...item };
+        } else if (f.type === "application/pdf") {
+          item = await readPdfFile(f);
+          if (item.sizeKb * 1024 > MAX_PDF_BYTES) { skippedTooBig++; continue; }
+        } else {
+          skippedUnsupported++;
+          continue;
+        }
+        const itemBytes = Math.round(item.dataUrl.length * 0.75);
+        if (runningTotal + itemBytes > MAX_ESSAY_TOTAL_BYTES) { skippedTooBig++; continue; }
+        runningTotal += itemBytes;
+        results.push(item);
+      }
+      setEssayImages((prev) => [...prev, ...results]);
+      const notes = [];
+      if (files.length > room) notes.push(`hanya ${room} lampiran pertama yang diproses (maks ${MAX_ESSAY_PAGES})`);
+      if (skippedTooBig) notes.push(`${skippedTooBig} file dilewati karena ukurannya terlalu besar (PDF tidak bisa dikompres otomatis — coba kompres PDF-nya dulu atau pakai foto biasa)`);
+      if (skippedUnsupported) notes.push(`${skippedUnsupported} file dilewati karena bukan foto atau PDF`);
+      if (notes.length) setEssayImgError(notes.join("; ") + ".");
     } catch (e) {
-      // Gagal memuat pengaturan Form -> biarkan kosong
+      setEssayImgError("Gagal memproses salah satu file. Coba lagi dengan file lain.");
+    } finally {
+      setEssayImgProcessing(false);
+    }
+  }
+
+  function removeEssayImage(idx) {
+    setEssayImages((prev) => prev.filter((_, i) => i !== idx));
+  }
+
+  // Menyimpan halaman-halaman foto ke 1 dokumen baru di koleksi "essayAnswers" (terpisah dari
+  // dokumen progress siswa), lalu menandai ujian selesai dengan referensi id dokumen tsb supaya
+  // guru bisa langsung memuat & melihat fotonya di dashboard.
+  async function submitEssayAndFinishExam() {
+    if (essayImages.length === 0 || !authUser) return;
+    setEssaySubmitting(true);
+    setEssayImgError("");
+    try {
+      const ref = doc(collection(db, "essayAnswers"));
+      await setDoc(ref, {
+        uid: authUser.uid,
+        studentName: profile?.name || "Siswa",
+        kelas: profile?.kelas || "",
+        sekolah: profile?.sekolah || "",
+        images: essayImages.map((im) => ({ type: im.type || "image", dataUrl: im.dataUrl, name: im.name || null })),
+        createdAt: serverTimestamp(),
+      });
+      setEssayImages([]);
+      finishExam(true, ref.id);
+    } catch (e) {
+      setEssayImgError("Gagal mengirim jawaban. Periksa koneksi internet kamu dan coba lagi.");
+    } finally {
+      setEssaySubmitting(false);
+    }
+  }
+
+  // Guru: memuat foto jawaban esai 1 percobaan ujian siswa dari koleksi essayAnswers.
+  async function loadEssayAnswerImages(essayAnswerId) {
+    if (!essayAnswerId) { setEssayViewImages([]); return; }
+    setEssayViewLoading(true);
+    setEssayViewError("");
+    setEssayViewImages(null);
+    try {
+      const snap = await getDoc(doc(db, "essayAnswers", essayAnswerId));
+      setEssayViewImages(snap.exists() ? (snap.data().images || []) : []);
+    } catch (e) {
+      setEssayViewError("Gagal memuat foto jawaban esai.");
+      setEssayViewImages([]);
+    } finally {
+      setEssayViewLoading(false);
     }
   }
 
   useEffect(() => {
-    if (mode === "app" && profile?.sekolah) loadEssayFormUrl(profile.sekolah);
-  }, [mode, profile]);
-
-  async function saveEssayFormUrl() {
-    setEssayFormMsg("");
-    const url = essayFormUrlInput.trim();
-    const folderUrl = essayDriveFolderUrlInput.trim();
-    if (url && !isValidGoogleFormLink(url)) {
-      setEssayFormMsg("Link Form harus berupa link Google Form yang valid (diawali https://docs.google.com/forms/).");
-      return;
+    if (profile?.role === "guru" && guruSelectedAttempt?.essaySubmitted) {
+      loadEssayAnswerImages(guruSelectedAttempt.essayAnswerId);
+    } else {
+      setEssayViewImages(null);
     }
-    if (folderUrl && !isValidDriveFolderLink(folderUrl)) {
-      setEssayFormMsg("Link folder harus berupa link Google Drive yang valid (diawali https://drive.google.com/).");
-      return;
-    }
-    const slug = sekolahSlug(profile?.sekolah);
-    if (!slug) {
-      setEssayFormMsg("Lengkapi data sekolah di profil kamu terlebih dahulu sebelum mengatur Form.");
-      return;
-    }
-    setEssayFormSaving(true);
-    try {
-      await setDoc(doc(db, "essayFormSettings", slug), { formUrl: url, driveFolderUrl: folderUrl, sekolah: profile.sekolah, updatedAt: serverTimestamp() }, { merge: true });
-      setEssayFormUrl(url);
-      setEssayDriveFolderUrl(folderUrl);
-      setEssayFormMsg("Pengaturan tersimpan.");
-    } catch (e) {
-      setEssayFormMsg("Gagal menyimpan. Coba lagi.");
-    } finally {
-      setEssayFormSaving(false);
-    }
-  }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [guruSelectedAttempt]);
 
   async function createAccessCode() {
     setKodeError("");
@@ -1910,14 +2010,45 @@ function AppInner() {
 
             {guruSelectedAttempt.essaySubmitted && (
               <div className="card" style={{ marginBottom: 16, background: "var(--brand-light)", border: "1px solid var(--brand)" }}>
-                <div style={{ fontSize: 12.5, fontWeight: 700, marginBottom: 4, color: "var(--brand-dark)" }}>Jawaban Esai Dikirim via Google Form</div>
-                <div style={{ fontSize: 12, color: "var(--brand-dark)", marginBottom: essayDriveFolderUrl ? 10 : 0 }}>
-                  Siswa mengonfirmasi sudah mengunggah jawaban esai. Cari file-nya berdasarkan nama siswa &amp; tanggal ujian.
-                </div>
-                {essayDriveFolderUrl && (
-                  <a href={essayDriveFolderUrl} target="_blank" rel="noopener noreferrer" className="btn-primary" style={{ display: "inline-flex" }}>
-                    Buka Folder Drive Jawaban <ArrowRight size={15} />
-                  </a>
+                <div style={{ fontSize: 12.5, fontWeight: 700, marginBottom: 8, color: "var(--brand-dark)" }}>Foto Jawaban Esai / Tulis Tangan</div>
+                {essayViewLoading && <div style={{ fontSize: 12.5, color: "var(--brand-dark)", display: "flex", alignItems: "center", gap: 6 }}><Loader2 size={14} className="spin" /> Memuat foto...</div>}
+                {essayViewError && <div style={{ fontSize: 12.5, color: "var(--rose)" }}>{essayViewError}</div>}
+                {!essayViewLoading && !essayViewError && essayViewImages && essayViewImages.length === 0 && (
+                  <div style={{ fontSize: 12.5, color: "var(--brand-dark)" }}>Belum ada foto tersimpan untuk percobaan ujian ini.</div>
+                )}
+                {!essayViewLoading && essayViewImages && essayViewImages.length > 0 && (
+                  <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+                    {essayViewImages.map((item, i) => {
+                      // Dukung format lama (string dataUrl gambar saja) & format baru ({type, dataUrl, name})
+                      const isPdf = typeof item === "object" && item.type === "pdf";
+                      const src = typeof item === "string" ? item : item.dataUrl;
+                      if (isPdf) {
+                        return (
+                          <a
+                            key={i}
+                            href={src}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            style={{ width: 96, height: 96, border: "1.5px solid var(--brand)", borderRadius: 12, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 4, color: "var(--brand-dark)", textDecoration: "none", background: "white" }}
+                            title="Buka PDF di tab baru"
+                          >
+                            <FileText size={26} />
+                            <span style={{ fontSize: 9.5, textAlign: "center", padding: "0 4px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: "100%" }}>{item.name || "PDF"}</span>
+                          </a>
+                        );
+                      }
+                      return (
+                        <button
+                          key={i}
+                          onClick={() => setZoomedEssayImage(src)}
+                          style={{ padding: 0, border: "1.5px solid var(--brand)", borderRadius: 12, overflow: "hidden", width: 96, height: 96, cursor: "zoom-in", background: "none" }}
+                          title={`Lihat halaman ${i + 1} ukuran penuh`}
+                        >
+                          <img src={src} alt={`Halaman ${i + 1}`} style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+                        </button>
+                      );
+                    })}
+                  </div>
                 )}
               </div>
             )}
@@ -1949,6 +2080,20 @@ function AppInner() {
 
             <button className="btn-primary" onClick={() => setGuruSelectedAttempt(null)}>Tutup</button>
           </div>
+        </div>
+      )}
+
+      {zoomedEssayImage && (
+        <div
+          style={{ position: "fixed", inset: 0, background: "rgba(30,27,51,0.9)", zIndex: 9999, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}
+          onClick={() => setZoomedEssayImage(null)}
+        >
+          <img src={zoomedEssayImage} alt="Jawaban esai ukuran penuh" style={{ maxWidth: "100%", maxHeight: "100%", borderRadius: 10, boxShadow: "0 12px 40px rgba(0,0,0,0.5)" }} />
+          <button
+            onClick={() => setZoomedEssayImage(null)}
+            style={{ position: "absolute", top: 20, right: 20, width: 36, height: 36, borderRadius: "50%", border: "none", background: "rgba(255,255,255,0.9)", color: "var(--ink)", fontSize: 16, cursor: "pointer" }}
+            title="Tutup"
+          >✕</button>
         </div>
       )}
 
@@ -2629,31 +2774,58 @@ function AppInner() {
                   <div className="card">
                     <div className="tag-eyebrow">Kirim Jawaban Tulis Tangan (Wajib)</div>
                     <h2 className="disp" style={{ fontSize: 17, marginBottom: 8 }}>Unggah jawaban tulis tangan kamu</h2>
-                    {essayFormUrl ? (
-                      <>
-                        <p style={{ fontSize: 13.5, color: "var(--muted)", marginBottom: 14 }}>
-                          Kerjakan soal esai/uraian di kertas, foto/scan hasilnya, lalu unggah lewat Google Form di bawah ini (bukan Drive pribadimu) — jawabanmu langsung masuk ke Drive guru dan siswa lain tidak bisa melihat jawabanmu. Ujian belum bisa diselesaikan sebelum kamu mengunggah jawaban lewat Form ini.
-                        </p>
-                        <div style={{ marginBottom: 14 }}>
-                          <a href={essayFormUrl} target="_blank" rel="noopener noreferrer" className="btn-primary" style={{ display: "inline-flex" }}>
-                            Buka Form &amp; Unggah Jawaban <ArrowRight size={15} />
-                          </a>
-                        </div>
-                        <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, marginBottom: 14, cursor: "pointer" }}>
-                          <input type="checkbox" checked={examEssayConfirmed} onChange={(e) => setExamEssayConfirmed(e.target.checked)} style={{ width: "auto" }} />
-                          Saya sudah mengunggah jawaban tulis tangan lewat Form tersebut.
-                        </label>
-                        <div style={{ display: "flex", gap: 10 }}>
-                          <button className="btn-primary" disabled={!examEssayConfirmed} onClick={submitExamEssayAndFinish}>
-                            Selesaikan Ujian <ArrowRight size={15} />
-                          </button>
-                        </div>
-                      </>
-                    ) : (
-                      <>
-                        <div className="err-box"><AlertTriangle size={14} style={{ verticalAlign: -2 }} /> Gurumu belum mengatur link Google Form untuk unggah jawaban tulis tangan. Ujian belum bisa diselesaikan — hubungi gurumu supaya link Form ini segera diatur.</div>
-                      </>
+                    <p style={{ fontSize: 13.5, color: "var(--muted)", marginBottom: 14 }}>
+                      Kerjakan soal esai/uraian di kertas, lalu foto tiap halaman (atau unggah 1 file PDF hasil scan) dan kirim langsung di sini (maks. {MAX_ESSAY_PAGES} lampiran). Berkasmu hanya bisa dilihat oleh gurumu, tidak oleh siswa lain. Ujian belum bisa diselesaikan sebelum kamu mengirim minimal 1 lampiran. Catatan: foto otomatis dikecilkan, tapi PDF dipakai apa adanya — jadi pastikan file PDF-mu tidak terlalu besar (idealnya di bawah 700KB per file).
+                    </p>
+
+                    {essayImgError && <div className="err-box"><AlertTriangle size={14} style={{ verticalAlign: -2 }} /> {essayImgError}</div>}
+
+                    {essayImages.length > 0 && (
+                      <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 14 }}>
+                        {essayImages.map((im, i) => (
+                          <div key={i} style={{ position: "relative", width: 92, height: 92, borderRadius: 12, overflow: "hidden", border: "1.5px solid var(--line)", background: im.type === "pdf" ? "var(--paper-2)" : undefined }}>
+                            {im.type === "pdf" ? (
+                              <a href={im.dataUrl} target="_blank" rel="noopener noreferrer" style={{ width: "100%", height: "100%", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 4, color: "var(--ink)", textDecoration: "none" }}>
+                                <FileText size={26} />
+                                <span style={{ fontSize: 9.5, textAlign: "center", padding: "0 4px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: "100%" }}>{im.name || "PDF"}</span>
+                              </a>
+                            ) : (
+                              <img src={im.dataUrl} alt={`Halaman ${i + 1}`} style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+                            )}
+                            <button
+                              onClick={() => removeEssayImage(i)}
+                              title="Hapus lampiran ini"
+                              style={{ position: "absolute", top: 3, right: 3, width: 20, height: 20, borderRadius: "50%", border: "none", background: "rgba(30,27,51,0.75)", color: "white", fontSize: 12, lineHeight: 1, cursor: "pointer" }}
+                            >✕</button>
+                            {im.type !== "pdf" && (
+                              <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, background: "rgba(30,27,51,0.65)", color: "white", fontSize: 9.5, textAlign: "center", padding: "2px 0" }}>Hal. {i + 1}</div>
+                            )}
+                          </div>
+                        ))}
+                      </div>
                     )}
+
+                    {essayImages.length < MAX_ESSAY_PAGES && (
+                      <label className="btn-ghost" style={{ display: "inline-flex", alignItems: "center", gap: 8, cursor: essayImgProcessing ? "default" : "pointer", marginBottom: 14 }}>
+                        {essayImgProcessing ? <Loader2 size={15} className="spin" /> : <ClipboardList size={15} />}
+                        {essayImgProcessing ? "Memproses..." : "Ambil / Pilih Foto atau PDF"}
+                        <input
+                          type="file"
+                          accept="image/*,application/pdf"
+                          capture="environment"
+                          multiple
+                          disabled={essayImgProcessing}
+                          style={{ display: "none" }}
+                          onChange={(e) => { addEssayImageFiles(e.target.files); e.target.value = ""; }}
+                        />
+                      </label>
+                    )}
+
+                    <div style={{ display: "flex", gap: 10 }}>
+                      <button className="btn-primary" disabled={essayImages.length === 0 || essaySubmitting || essayImgProcessing} onClick={submitEssayAndFinishExam}>
+                        {essaySubmitting ? <Loader2 size={15} className="spin" /> : null} Kirim Jawaban &amp; Selesaikan Ujian <ArrowRight size={15} />
+                      </button>
+                    </div>
                   </div>
                 )}
 
@@ -3127,44 +3299,10 @@ function AppInner() {
                     </p>
 
                     <div className="card" style={{ marginBottom: 18, background: "var(--paper-2)" }}>
-                      <div style={{ fontSize: 12.5, fontWeight: 700, marginBottom: 6 }}>Unggah Jawaban Esai — Google Form &amp; Folder Drive</div>
-                      <p style={{ fontSize: 12, color: "var(--muted)", marginBottom: 10 }}>
-                        Buat 1 Google Form dengan pertanyaan tipe "Upload file" di akun Google-mu. Secara default, Form akan otomatis membuat 1 folder di Drive-mu (biasanya bernama sama dengan nama Form) untuk menampung semua file yang diunggah siswa — file itu masuk ke Drive-mu sendiri, bukan Drive siswa, dan siswa lain tidak bisa saling melihat file. Tempel link Form (untuk dibagikan ke siswa) dan link folder Drive tempat file itu tersimpan (untuk kamu membuka &amp; mengecek jawaban) di bawah ini. Berlaku untuk semua siswa di sekolah <b>{profile?.sekolah || "-"}</b>.
+                      <div style={{ fontSize: 12.5, fontWeight: 700, marginBottom: 6 }}>Unggah Jawaban Esai</div>
+                      <p style={{ fontSize: 12, color: "var(--muted)", margin: 0 }}>
+                        Siswa memfoto jawaban tulis tangannya dan mengunggahnya langsung dari aplikasi ini — tidak perlu Google Form atau Drive lagi. Klik "Lihat Jawaban" pada baris siswa di tabel di bawah untuk melihat fotonya.
                       </p>
-                      {essayFormMsg && <div style={{ fontSize: 12, color: essayFormMsg.startsWith("Gagal") || essayFormMsg.startsWith("Link Form harus") || essayFormMsg.startsWith("Link folder harus") || essayFormMsg.startsWith("Lengkapi") ? "var(--rose)" : "#0F7A56", marginBottom: 8 }}>{essayFormMsg}</div>}
-                      <div style={{ marginBottom: 8 }}>
-                        <div style={{ fontSize: 11.5, color: "var(--muted)", marginBottom: 4 }}>Link Google Form (dibagikan ke siswa)</div>
-                        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                          <input
-                            type="text"
-                            style={{ flex: 1, minWidth: 220 }}
-                            placeholder="https://docs.google.com/forms/d/e/..../viewform"
-                            value={essayFormUrlInput}
-                            onChange={(e) => { setEssayFormUrlInput(e.target.value); setEssayFormMsg(""); }}
-                          />
-                          {essayFormUrl && (
-                            <a href={essayFormUrl} target="_blank" rel="noopener noreferrer" className="btn-ghost" style={{ display: "inline-flex" }}>Buka Form</a>
-                          )}
-                        </div>
-                      </div>
-                      <div style={{ marginBottom: 10 }}>
-                        <div style={{ fontSize: 11.5, color: "var(--muted)", marginBottom: 4 }}>Link Folder Google Drive (tempat jawaban siswa tersimpan, khusus untukmu)</div>
-                        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                          <input
-                            type="text"
-                            style={{ flex: 1, minWidth: 220 }}
-                            placeholder="https://drive.google.com/drive/folders/..."
-                            value={essayDriveFolderUrlInput}
-                            onChange={(e) => { setEssayDriveFolderUrlInput(e.target.value); setEssayFormMsg(""); }}
-                          />
-                          {essayDriveFolderUrl && (
-                            <a href={essayDriveFolderUrl} target="_blank" rel="noopener noreferrer" className="btn-ghost" style={{ display: "inline-flex" }}>Buka Folder Drive</a>
-                          )}
-                        </div>
-                      </div>
-                      <button className="btn-primary" disabled={essayFormSaving} onClick={saveEssayFormUrl}>
-                        {essayFormSaving ? <Loader2 size={14} className="spin" /> : null} Simpan Pengaturan
-                      </button>
                     </div>
 
                     <div style={{ display: "flex", gap: 14, flexWrap: "wrap", marginBottom: 18 }}>
