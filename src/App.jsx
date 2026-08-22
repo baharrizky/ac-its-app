@@ -9,11 +9,12 @@ import {
   GraduationCap, LayoutDashboard, BookOpen, PenLine, TrendingUp, User,
   Lightbulb, CheckCircle2, XCircle, AlertTriangle, ArrowRight, ArrowLeft, LogOut, Database, Users,
   Mail, Lock, Loader2, RefreshCw, MessageCircle, Sparkles, ClipboardList, Lock as LockIcon,
-  ZoomIn, ZoomOut, Send, Clock, Trophy, Award,
+  ZoomIn, ZoomOut, Send, Clock, Trophy, Award, ListChecks, KeyRound,
 } from "lucide-react";
 import { auth, db } from "./firebase";
 import {
   onAuthStateChanged, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut,
+  sendPasswordResetEmail,
 } from "firebase/auth";
 import {
   doc, getDoc, setDoc, updateDoc, collection, query, where, getDocs, arrayUnion, serverTimestamp,
@@ -537,7 +538,7 @@ function AppInner() {
   const [authTimedOut, setAuthTimedOut] = useState(false);
   const [profile, setProfile] = useState(null); // { name, role, kelas, sekolah }
   const [mode, setMode] = useState("landing"); // landing | auth | app
-  const [authTab, setAuthTab] = useState("login"); // login | daftar
+  const [authTab, setAuthTab] = useState("login"); // login | daftar | lupa
   const [authRole, setAuthRole] = useState("siswa");
   const [authName, setAuthName] = useState("");
   const [authKelas, setAuthKelas] = useState("");
@@ -549,6 +550,11 @@ function AppInner() {
   const [authPassword2, setAuthPassword2] = useState("");
   const [authError, setAuthError] = useState("");
   const [authSubmitting, setAuthSubmitting] = useState(false);
+  // ---------- Lupa kata sandi ----------
+  const [authResetEmail, setAuthResetEmail] = useState("");
+  const [authResetSubmitting, setAuthResetSubmitting] = useState(false);
+  const [authResetSent, setAuthResetSent] = useState(false);
+  const [authResetError, setAuthResetError] = useState("");
 
   // ---------- Konten materi & soal (bisa ditimpa guru, tersimpan di Firestore) ----------
   const [contentOverrides, setContentOverrides] = useState({});
@@ -593,6 +599,8 @@ function AppInner() {
   const [poolIndex, setPoolIndex] = useState(EMPTY_POOLIDX);
   const [completedQ, setCompletedQ] = useState({});
   const [wrongQ, setWrongQ] = useState({}); // {concept: [idx, ...]} — soal yg diselesaikan lewat jalur salah (3x salah berturut-turut), ditandai silang merah
+  const [mistakeQ, setMistakeQ] = useState({}); // {concept: [idx, ...]} — soal yg pernah dijawab salah minimal 1x (dipakai guru utk lihat siapa salah di soal mana)
+  const [hintQ, setHintQ] = useState({}); // {concept: [idx, ...]} — soal yg pernah diminta hint/bantuan (dipakai guru utk lihat siapa minta bantuan di soal mana)
   const [streak, setStreak] = useState(0);
   const [lastActiveDate, setLastActiveDate] = useState(null);
   const streakCheckedRef = useRef(false);
@@ -667,6 +675,7 @@ function AppInner() {
   const [guruKelasFilter, setGuruKelasFilter] = useState("semua");
   const [guruLoading, setGuruLoading] = useState(false);
   const [guruSelectedAttempt, setGuruSelectedAttempt] = useState(null);
+  const [guruProgressConcept, setGuruProgressConcept] = useState("E1");
   const [guruSelectedStudent, setGuruSelectedStudent] = useState(null);
 
   // ---------- Admin: Kode Akses Guru ----------
@@ -757,6 +766,8 @@ function AppInner() {
           setPoolIndex({ ...EMPTY_POOLIDX, ...(d.poolIndex || {}) });
           setCompletedQ(d.completedQ || {});
           setWrongQ(d.wrongQ || {});
+          setMistakeQ(d.mistakeQ || {});
+          setHintQ(d.hintQ || {});
           setTutorMessages(d.tutorMessages || []);
           setExamHistory(d.examHistory || []);
           setLatihanTimeSec(d.latihanTimeSec || 0);
@@ -791,8 +802,8 @@ function AppInner() {
 
   useEffect(() => {
     if (!authUser || !profile || profile.role !== "siswa" || !progressLoaded) return;
-    setDoc(doc(db, "progress", authUser.uid), { attempts, misconceptions, poolIndex, completedQ, wrongQ, streak, lastActiveDate, tutorMessages: tutorMessages.slice(-30), examHistory: examHistory.slice(0, 10), latihanTimeSec, latihanHintCount, latihanViolations }, { merge: true }).catch(() => {});
-  }, [attempts, misconceptions, poolIndex, completedQ, wrongQ, streak, lastActiveDate, tutorMessages, examHistory, latihanTimeSec, latihanHintCount, latihanViolations, authUser, profile, progressLoaded]);
+    setDoc(doc(db, "progress", authUser.uid), { attempts, misconceptions, poolIndex, completedQ, wrongQ, mistakeQ, hintQ, streak, lastActiveDate, tutorMessages: tutorMessages.slice(-30), examHistory: examHistory.slice(0, 10), latihanTimeSec, latihanHintCount, latihanViolations }, { merge: true }).catch(() => {});
+  }, [attempts, misconceptions, poolIndex, completedQ, wrongQ, mistakeQ, hintQ, streak, lastActiveDate, tutorMessages, examHistory, latihanTimeSec, latihanHintCount, latihanViolations, authUser, profile, progressLoaded]);
 
   // ---------- Refleksi siswa: muat jawaban tersimpan (kalau pernah mengisi sebelumnya) ----------
   useEffect(() => {
@@ -1020,6 +1031,8 @@ function AppInner() {
   }
 
   function submitAnswer() {
+    const pool = EFFECTIVE_POOL[activeConcept] || [];
+    const qIdx = pool.length ? (poolIndex[activeConcept] || 0) % pool.length : 0;
     const q = currentQ();
     const opt = q.options[selected];
     if (opt.correct) {
@@ -1034,6 +1047,12 @@ function AppInner() {
         setAttempts((a) => ({ ...a, [activeConcept]: [...a[activeConcept], 0.1] }));
       }
       if (opt.tag) setMisconceptions((m) => [...m, { concept: activeConcept, tag: opt.tag }]);
+      // Catat soal ini sebagai soal yang pernah dijawab salah, supaya guru bisa melihat
+      // siapa saja yang salah pada soal ini (per materi & per nomor soal).
+      setMistakeQ((mq) => {
+        const cur = mq[activeConcept] || [];
+        return cur.includes(qIdx) ? mq : { ...mq, [activeConcept]: [...cur, qIdx] };
+      });
     }
     setScreen("diagnosis");
   }
@@ -1089,6 +1108,14 @@ function AppInner() {
   function goToHint() {
     setHintTier(diag.tier);
     setLatihanHintCount((n) => n + 1);
+    // Catat soal ini sebagai soal yang pernah diminta bantuan/hint-nya, supaya guru bisa
+    // melihat siapa saja yang minta bantuan pada soal ini (per materi & per nomor soal).
+    const pool = EFFECTIVE_POOL[activeConcept] || [];
+    const qIdx = pool.length ? (poolIndex[activeConcept] || 0) % pool.length : 0;
+    setHintQ((hq) => {
+      const cur = hq[activeConcept] || [];
+      return cur.includes(qIdx) ? hq : { ...hq, [activeConcept]: [...cur, qIdx] };
+    });
     setScreen("hint");
   }
 
@@ -1271,9 +1298,20 @@ function AppInner() {
   const earnedBadges = useMemo(() => BADGES.filter((b) => b.check(badgeStats)), [badgeStats]);
 
   async function loadLeaderboard() {
+    // Papan peringkat dibatasi per kelas (dan per sekolah), bukan peringkat umum seluruh siswa —
+    // supaya siswa hanya bersaing dengan teman sekelasnya sendiri.
+    if (!profile?.kelas || !profile?.sekolah) {
+      setLeaderboardStudents([]);
+      return;
+    }
     setLeaderboardLoading(true);
     try {
-      const usersSnap = await getDocs(query(collection(db, "users"), where("role", "==", "siswa")));
+      const usersSnap = await getDocs(query(
+        collection(db, "users"),
+        where("role", "==", "siswa"),
+        where("sekolah", "==", profile.sekolah),
+        where("kelas", "==", profile.kelas)
+      ));
       const list = [];
       for (const uDoc of usersSnap.docs) {
         const u = uDoc.data();
@@ -1360,6 +1398,28 @@ function AppInner() {
     }
   }
 
+  async function submitPasswordReset() {
+    setAuthResetError("");
+    const email = authResetEmail.trim();
+    if (!email) {
+      setAuthResetError("Masukkan email akunmu terlebih dahulu.");
+      return;
+    }
+    setAuthResetSubmitting(true);
+    try {
+      await sendPasswordResetEmail(auth, email);
+      setAuthResetSent(true);
+    } catch (e) {
+      const map = {
+        "auth/invalid-email": "Format email tidak valid.",
+        "auth/user-not-found": "Email ini belum terdaftar.",
+      };
+      setAuthResetError(map[e.code] || "Gagal mengirim link reset. Coba lagi.");
+    } finally {
+      setAuthResetSubmitting(false);
+    }
+  }
+
   async function loadGuruData() {
     setGuruLoading(true);
     try {
@@ -1377,7 +1437,7 @@ function AppInner() {
         if (guruKelasAjar.length > 0 && !guruKelasAjar.includes(u.kelas)) continue;
         const progSnap = await getDoc(doc(db, "progress", uDoc.id));
         const prog = progSnap.exists() ? progSnap.data() : { attempts: EMPTY_ATTEMPTS, misconceptions: [], examHistory: [] };
-        list.push({ uid: uDoc.id, name: u.name || "Siswa", kelas: u.kelas, sekolah: u.sekolah, attempts: prog.attempts || EMPTY_ATTEMPTS, misconceptions: prog.misconceptions || [], examHistory: prog.examHistory || [], streak: prog.streak || 0, latihanTimeSec: prog.latihanTimeSec || 0, latihanHintCount: prog.latihanHintCount || 0, latihanViolations: prog.latihanViolations || 0 });
+        list.push({ uid: uDoc.id, name: u.name || "Siswa", kelas: u.kelas, sekolah: u.sekolah, attempts: prog.attempts || EMPTY_ATTEMPTS, misconceptions: prog.misconceptions || [], examHistory: prog.examHistory || [], streak: prog.streak || 0, latihanTimeSec: prog.latihanTimeSec || 0, latihanHintCount: prog.latihanHintCount || 0, latihanViolations: prog.latihanViolations || 0, mistakeQ: prog.mistakeQ || {}, hintQ: prog.hintQ || {} });
       }
       setGuruStudents(list);
     } catch (e) {}
@@ -1680,6 +1740,27 @@ function AppInner() {
     return Math.round(withDuration.reduce((a, h) => a + h.durationSec, 0) / withDuration.length);
   }, [guruExamAttempts]);
 
+  // ---------- Progress per Soal: siapa saja yang salah / minta bantuan, per soal, per materi ----------
+  const guruProgressRows = useMemo(() => {
+    const pool = EFFECTIVE_POOL[guruProgressConcept] || [];
+    return pool.map((q, idx) => {
+      const salah = guruFilteredStudents.filter((s) => (s.mistakeQ?.[guruProgressConcept] || []).includes(idx)).map((s) => s.name);
+      const bantuan = guruFilteredStudents.filter((s) => (s.hintQ?.[guruProgressConcept] || []).includes(idx)).map((s) => s.name);
+      return { idx, text: q.text, salah, bantuan };
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [guruFilteredStudents, guruProgressConcept, EFFECTIVE_POOL]);
+
+  // ---------- Peringkat (leaderboard) versi guru: per kelas yang sedang difilter ----------
+  const guruLeaderboard = useMemo(() => {
+    const list = guruFilteredStudents.map((s) => {
+      const sXp = computeXp(s.attempts);
+      return { uid: s.uid, name: s.name, kelas: s.kelas, xp: sXp, streak: s.streak || 0, level: computeLevel(sXp).level };
+    });
+    list.sort((a, b) => b.xp - a.xp);
+    return list;
+  }, [guruFilteredStudents]);
+
   async function exportGuruExcel() {
     const XLSX = await import("xlsx");
     const rows = guruFilteredStudents.map((s) => {
@@ -1964,6 +2045,28 @@ function AppInner() {
       {mode === "auth" && (
         <div className="body-area">
           <div className="card" style={{ maxWidth: 400, margin: "0 auto" }}>
+            {authTab === "lupa" ? (
+              <>
+                <div className="tag-eyebrow">Lupa Kata Sandi</div>
+                <h2 className="disp" style={{ fontSize: 19, marginBottom: 6, display: "flex", alignItems: "center", gap: 8 }}><KeyRound size={18} /> Atur ulang kata sandi</h2>
+                <p style={{ fontSize: 12.5, color: "var(--muted)", marginBottom: 16 }}>
+                  Masukkan email akunmu. Kami akan mengirim link untuk membuat kata sandi baru ke email tersebut.
+                </p>
+                {authResetError && <div className="err-box"><AlertTriangle size={14} style={{ verticalAlign: -2 }} /> {authResetError}</div>}
+                {authResetSent ? (
+                  <div className="ok-box"><CheckCircle2 size={16} /> Link reset kata sandi sudah dikirim. Periksa kotak masuk (atau folder spam) email kamu.</div>
+                ) : (
+                  <div style={{ marginBottom: 16 }} className="inputwrap"><Mail size={15} /><input type="email" placeholder="Email akunmu" value={authResetEmail} onChange={(e) => setAuthResetEmail(e.target.value)} /></div>
+                )}
+                {!authResetSent && (
+                  <button className="btn-primary" disabled={authResetSubmitting} onClick={submitPasswordReset} style={{ width: "100%", justifyContent: "center", marginBottom: 10 }}>
+                    {authResetSubmitting ? <Loader2 size={15} className="spin" /> : <>Kirim Link Reset <ArrowRight size={15} /></>}
+                  </button>
+                )}
+                <button className="btn-ghost" style={{ width: "100%", justifyContent: "center" }} onClick={() => { setAuthTab("login"); setAuthResetError(""); setAuthResetSent(false); setAuthResetEmail(""); }}><ArrowLeft size={14} /> Kembali ke Login</button>
+              </>
+            ) : (
+            <>
             <div className="tag-eyebrow">{authTab === "login" ? "Login" : "Daftar Akun"}</div>
             <h2 className="disp" style={{ fontSize: 19, marginBottom: 14 }}>{authTab === "login" ? "Selamat datang kembali" : "Buat akun baru"}</h2>
 
@@ -2026,14 +2129,26 @@ function AppInner() {
             )}
 
             <div style={{ marginBottom: 10 }} className="inputwrap"><Mail size={15} /><input type="email" placeholder="Email" value={authEmail} onChange={(e) => setAuthEmail(e.target.value)} /></div>
-            <div style={{ marginBottom: authTab === "daftar" ? 10 : 16 }} className="inputwrap"><Lock size={15} /><input type="password" placeholder="Kata sandi (min. 6 karakter)" value={authPassword} onChange={(e) => setAuthPassword(e.target.value)} /></div>
+            <div style={{ marginBottom: authTab === "daftar" ? 10 : 8 }} className="inputwrap"><Lock size={15} /><input type="password" placeholder="Kata sandi (min. 6 karakter)" value={authPassword} onChange={(e) => setAuthPassword(e.target.value)} /></div>
             {authTab === "daftar" && (
               <div style={{ marginBottom: 16 }} className="inputwrap"><Lock size={15} /><input type="password" placeholder="Ulangi kata sandi" value={authPassword2} onChange={(e) => setAuthPassword2(e.target.value)} /></div>
+            )}
+            {authTab === "login" && (
+              <div style={{ textAlign: "right", marginBottom: 16 }}>
+                <button
+                  onClick={() => { setAuthTab("lupa"); setAuthError(""); setAuthResetEmail(authEmail); setAuthResetSent(false); setAuthResetError(""); }}
+                  style={{ background: "none", border: "none", padding: 0, color: "var(--brand)", fontSize: 12.5, fontWeight: 600, cursor: "pointer" }}
+                >
+                  Lupa kata sandi?
+                </button>
+              </div>
             )}
 
             <button className="btn-primary" disabled={authSubmitting} onClick={submitAuth} style={{ width: "100%", justifyContent: "center" }}>
               {authSubmitting ? <Loader2 size={15} className="spin" /> : (authTab === "login" ? <>Login <ArrowRight size={15} /></> : <>Daftar &amp; Mulai Belajar <ArrowRight size={15} /></>)}
             </button>
+            </>
+            )}
           </div>
         </div>
       )}
@@ -2062,6 +2177,8 @@ function AppInner() {
               <nav className="sidebar-nav">
                 <button className={"sidebar-navbtn" + (guruTab === "beranda" && screen !== "profil" ? " active" : "")} onClick={() => { setGuruTab("beranda"); setScreen("dashboard"); }}><LayoutDashboard size={17} />Beranda</button>
                 <button className={"sidebar-navbtn" + (guruTab === "analitik" && screen !== "profil" ? " active" : "")} onClick={() => { setGuruTab("analitik"); setScreen("dashboard"); }}><TrendingUp size={17} />Analitik</button>
+                <button className={"sidebar-navbtn" + (guruTab === "progressMateri" && screen !== "profil" ? " active" : "")} onClick={() => { setGuruTab("progressMateri"); setScreen("dashboard"); }}><ListChecks size={17} />Progress per Soal</button>
+                <button className={"sidebar-navbtn" + (guruTab === "peringkat" && screen !== "profil" ? " active" : "")} onClick={() => { setGuruTab("peringkat"); setScreen("dashboard"); }}><Trophy size={17} />Peringkat</button>
                 <button className={"sidebar-navbtn" + (guruTab === "ujian" && screen !== "profil" ? " active" : "")} onClick={() => { setGuruTab("ujian"); setGuruSelectedAttempt(null); setScreen("dashboard"); }}><Clock size={17} />Jawaban &amp; Waktu Ujian</button>
                 <button className={"sidebar-navbtn" + (guruTab === "materi" && screen !== "profil" ? " active" : "")} onClick={() => { setGuruTab("materi"); setScreen("dashboard"); }}><Database size={17} />Knowledge Base</button>
                 <button className={"sidebar-navbtn" + (guruTab === "kelolaKonten" && screen !== "profil" ? " active" : "")} onClick={() => { setGuruTab("kelolaKonten"); setScreen("dashboard"); }}><PenLine size={17} />Kelola Materi &amp; Soal</button>
@@ -2101,6 +2218,8 @@ function AppInner() {
             <nav className="floating-nav">
               <button className={"sidebar-navbtn" + (guruTab === "beranda" && screen !== "profil" ? " active" : "")} onClick={() => { setGuruTab("beranda"); setScreen("dashboard"); }}><LayoutDashboard size={17} />Beranda</button>
               <button className={"sidebar-navbtn" + (guruTab === "analitik" && screen !== "profil" ? " active" : "")} onClick={() => { setGuruTab("analitik"); setScreen("dashboard"); }}><TrendingUp size={17} />Analitik</button>
+              <button className={"sidebar-navbtn" + (guruTab === "progressMateri" && screen !== "profil" ? " active" : "")} onClick={() => { setGuruTab("progressMateri"); setScreen("dashboard"); }}><ListChecks size={17} />Progress</button>
+              <button className={"sidebar-navbtn" + (guruTab === "peringkat" && screen !== "profil" ? " active" : "")} onClick={() => { setGuruTab("peringkat"); setScreen("dashboard"); }}><Trophy size={17} />Peringkat</button>
               <button className={"sidebar-navbtn" + (guruTab === "ujian" && screen !== "profil" ? " active" : "")} onClick={() => { setGuruTab("ujian"); setGuruSelectedAttempt(null); setScreen("dashboard"); }}><Clock size={17} />Jawaban</button>
               <button className={"sidebar-navbtn" + (guruTab === "materi" && screen !== "profil" ? " active" : "")} onClick={() => { setGuruTab("materi"); setScreen("dashboard"); }}><Database size={17} />KB</button>
               <button className={"sidebar-navbtn" + (guruTab === "kelolaKonten" && screen !== "profil" ? " active" : "")} onClick={() => { setGuruTab("kelolaKonten"); setScreen("dashboard"); }}><PenLine size={17} />Kelola Konten</button>
@@ -2544,10 +2663,14 @@ function AppInner() {
 
                 {progressLoaded && screen === "leaderboard" && (
                   <div className="card">
-                    <div className="tag-eyebrow">Peringkat Siswa</div>
-                    <h2 className="disp" style={{ fontSize: 19, marginBottom: 14 }}>Papan Peringkat</h2>
-                    {leaderboardLoading && <div style={{ display: "flex", alignItems: "center", gap: 8, color: "var(--muted)", fontSize: 13.5 }}><Loader2 size={15} className="spin" /> Memuat peringkat...</div>}
-                    {!leaderboardLoading && leaderboardStudents.length === 0 && <p style={{ color: "var(--muted)", fontSize: 13.5 }}>Belum ada data siswa lain.</p>}
+                    <div className="tag-eyebrow">Peringkat Siswa {profile?.kelas ? `— Kelas ${profile.kelas}` : ""}</div>
+                    <h2 className="disp" style={{ fontSize: 19, marginBottom: 4 }}>Papan Peringkat</h2>
+                    <p style={{ fontSize: 12, color: "var(--muted)", marginBottom: 14 }}>Peringkat hanya dibandingkan dengan teman sekelasmu, bukan seluruh siswa.</p>
+                    {(!profile?.kelas || !profile?.sekolah) && (
+                      <p style={{ color: "var(--muted)", fontSize: 13.5 }}>Lengkapi data kelas &amp; sekolah di profil kamu dulu untuk melihat papan peringkat kelas.</p>
+                    )}
+                    {profile?.kelas && profile?.sekolah && leaderboardLoading && <div style={{ display: "flex", alignItems: "center", gap: 8, color: "var(--muted)", fontSize: 13.5 }}><Loader2 size={15} className="spin" /> Memuat peringkat...</div>}
+                    {profile?.kelas && profile?.sekolah && !leaderboardLoading && leaderboardStudents.length === 0 && <p style={{ color: "var(--muted)", fontSize: 13.5 }}>Belum ada data siswa lain di kelasmu.</p>}
                     {!leaderboardLoading && leaderboardStudents.map((s, i) => (
                       <div key={s.uid} style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 8px", borderBottom: "1px solid var(--line)", background: s.uid === authUser?.uid ? "var(--brand-light)" : "transparent", borderRadius: 10 }}>
                         <div style={{ width: 26, textAlign: "center", fontWeight: 700, color: i < 3 ? "var(--amber)" : "var(--muted)" }}>{i + 1}</div>
@@ -2869,6 +2992,72 @@ function AppInner() {
                         </div>
                       );
                     })}
+                  </div>
+                )}
+
+                {guruTab === "progressMateri" && (
+                  <div className="card">
+                    <div className="tag-eyebrow">Progress per Soal — {guruKelasFilter === "semua" ? "Semua Kelas" : `Kelas ${guruKelasFilter}`}</div>
+                    <h2 className="disp" style={{ fontSize: 19, marginBottom: 4 }}>Siapa Salah &amp; Minta Bantuan per Soal</h2>
+                    <p style={{ fontSize: 12, color: "var(--muted)", marginBottom: 14 }}>
+                      Pilih materi untuk melihat rincian tiap soal: siswa yang pernah menjawab salah, dan siswa yang pernah meminta bantuan/hint pada soal tersebut.
+                    </p>
+                    <div style={{ display: "flex", flexWrap: "wrap", marginBottom: 6 }}>
+                      {CONCEPT_ORDER.map((c) => (
+                        <button
+                          key={c}
+                          className={"tabbtn" + (guruProgressConcept === c ? " active" : "")}
+                          onClick={() => setGuruProgressConcept(c)}
+                        >
+                          {CONCEPTS[c].short}
+                        </button>
+                      ))}
+                    </div>
+                    <div className="tag-eyebrow" style={{ marginBottom: 10 }}>{CONCEPTS[guruProgressConcept].name}</div>
+                    {guruProgressRows.length === 0 && <p style={{ fontSize: 13.5, color: "var(--muted)" }}>Soal untuk materi ini belum tersedia.</p>}
+                    {guruProgressRows.map((r) => (
+                      <div key={r.idx} className="card" style={{ marginBottom: 12, background: "var(--paper-2)" }}>
+                        <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 8 }}>Soal {r.idx + 1}: <MathText text={r.text} /></div>
+                        <div style={{ display: "flex", gap: 16, flexWrap: "wrap" }}>
+                          <div style={{ flex: "1 1 220px" }}>
+                            <div style={{ fontSize: 11.5, color: "var(--rose)", fontWeight: 700, marginBottom: 5 }}>
+                              <XCircle size={12} style={{ verticalAlign: -2 }} /> Menjawab salah ({r.salah.length})
+                            </div>
+                            {r.salah.length === 0
+                              ? <span style={{ fontSize: 12, color: "var(--muted)" }}>Tidak ada</span>
+                              : r.salah.map((n, i) => <span key={i} className="misc-item" style={{ marginRight: 5, marginBottom: 5, display: "inline-block" }}>{n}</span>)}
+                          </div>
+                          <div style={{ flex: "1 1 220px" }}>
+                            <div style={{ fontSize: 11.5, color: "#9A6414", fontWeight: 700, marginBottom: 5 }}>
+                              <Lightbulb size={12} style={{ verticalAlign: -2 }} /> Minta bantuan ({r.bantuan.length})
+                            </div>
+                            {r.bantuan.length === 0
+                              ? <span style={{ fontSize: 12, color: "var(--muted)" }}>Tidak ada</span>
+                              : r.bantuan.map((n, i) => <span key={i} className="misc-item" style={{ marginRight: 5, marginBottom: 5, display: "inline-block" }}>{n}</span>)}
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {guruTab === "peringkat" && (
+                  <div className="card">
+                    <div className="tag-eyebrow">Papan Peringkat — {guruKelasFilter === "semua" ? "Semua Kelas" : `Kelas ${guruKelasFilter}`}</div>
+                    <h2 className="disp" style={{ fontSize: 19, marginBottom: 4 }}>Peringkat Siswa</h2>
+                    <p style={{ fontSize: 12, color: "var(--muted)", marginBottom: 14 }}>
+                      Gunakan filter kelas di atas untuk melihat peringkat kelas tertentu. Berdasarkan XP yang sama dengan yang dilihat siswa.
+                    </p>
+                    {guruLeaderboard.length === 0 && <p style={{ fontSize: 13.5, color: "var(--muted)" }}>Belum ada siswa pada kelas ini, atau belum ada aktivitas belajar.</p>}
+                    {guruLeaderboard.map((s, i) => (
+                      <div key={s.uid} style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 8px", borderBottom: "1px solid var(--line)", borderRadius: 10 }}>
+                        <div style={{ width: 26, textAlign: "center", fontWeight: 700, color: i < 3 ? "var(--amber)" : "var(--muted)" }}>{i + 1}</div>
+                        <div className="avatar" style={{ width: 32, height: 32, fontSize: 12 }}>{s.name.trim().charAt(0).toUpperCase()}</div>
+                        <div style={{ flex: 1, fontSize: 13.5, fontWeight: 600 }}>{s.name}{s.kelas ? <span style={{ color: "var(--muted)", fontWeight: 500 }}> · {s.kelas}</span> : ""}</div>
+                        <span className="streak-chip">🔥 {s.streak}</span>
+                        <span className="xp-chip">⭐ {s.xp} XP</span>
+                      </div>
+                    ))}
                   </div>
                 )}
 
