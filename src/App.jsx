@@ -21,7 +21,7 @@ import {
 } from "firebase/firestore";
 
 // ---------------- DATA: Peta konsep (sesuai Knowledge Base) ----------------
-// ---------------- DATA: Peta konsep Eksponen (disesuaikan ATP Bab 1 - Kurikulum Merdeka, Fase E) ----------------
+// ---------------- DATA: Peta konsep Eksponen & Logaritma (Fase E) ----------------
 const CONCEPTS = {
   E1:  { name: "Definisi Eksponen",            short: "aⁿ",        prereq: [] },
   E2:  { name: "Sifat Perkalian Eksponen",      short: "aᵐ·aⁿ",     prereq: ["E1"] },
@@ -34,8 +34,10 @@ const CONCEPTS = {
   E9:  { name: "Operasi Aljabar Bentuk Akar",   short: "√a ± √b",   prereq: ["E8"] },
   E10: { name: "Pertumbuhan & Peluruhan Eksponensial", short: "Nₜ=N₀(1±p)ᵗ", prereq: ["E1", "E2"] },
   E11: { name: "Persamaan Eksponen",            short: "aˣ=aʸ",     prereq: ["E1", "E2", "E3", "E4", "E6", "E7"] },
+  E12: { name: "Logaritma",                       short: "logₐx=y",   prereq: ["E1", "E11"] },
+  E13: { name: "Operasi Aljabar Logaritma",        short: "logₐ(xy)",  prereq: ["E12"] },
 };
-const CONCEPT_ORDER = ["E1", "E2", "E3", "E4", "E5", "E6", "E7", "E8", "E9", "E10", "E11"];
+const CONCEPT_ORDER = ["E1", "E2", "E3", "E4", "E5", "E6", "E7", "E8", "E9", "E10", "E11", "E12", "E13"];
 const KELAS_OPTIONS = Array.from({ length: 10 }, (_, i) => `X.${i + 1}`);
 const SEKOLAH_OPTIONS = ["SMAN 5 Kota Jambi"];
 const EMPTY_ATTEMPTS = Object.fromEntries(CONCEPT_ORDER.map((c) => [c, []]));
@@ -113,6 +115,34 @@ const MATERI = {
       "8^{x+2}=32^{x-1} ⇒ (2^3)^{x+2}=(2^5)^{x-1} ⇒ 3x+6=5x-5 ⇒ x=\\frac{11}{2}",
       "4^x-5\\cdot2^x+4=0 ⇒ u=2^x ⇒ u^2-5u+4=0 ⇒ (u-1)(u-4)=0 ⇒ u=1\\text{ atau }u=4 ⇒ x=0\\text{ atau }x=2",
     ],
+  },
+  E12: {
+    formula: [
+      "\\log_a b = c \\Longleftrightarrow a^c=b \\quad (a>0,\\ a\\neq1,\\ b>0)",
+      "\\log_a 1=0,\\quad \\log_a a=1",
+    ],
+    penjelasan: "Logaritma adalah operasi kebalikan dari perpangkatan. Pada $\\log_a b=c$, bilangan $a$ disebut basis, $b$ disebut numerus, dan $c$ adalah hasil logaritma. Pertanyaan utamanya adalah: basis $a$ harus dipangkatkan berapa agar menghasilkan $b$? Syarat penting: $a>0$, $a\\neq1$, dan $b>0$.",
+    contoh: [
+      "\\log_2 8=3 \\quad\\text{karena}\\quad 2^3=8",
+      "\\log_5 25=2 \\quad\\text{karena}\\quad 5^2=25",
+      "\\log_3 \\frac{1}{9}=-2 \\quad\\text{karena}\\quad 3^{-2}=\\frac{1}{9}",
+      "\\log_{10}1000=3 \\quad\\text{dan}\\quad \\log_{10}0{,}01=-2",
+    ],
+  },
+  E13: {
+    formula: [
+      "\\log_a(MN)=\\log_a M+\\log_a N",
+      "\\log_a\\left(\\frac{M}{N}\\right)=\\log_a M-\\log_a N",
+      "\\log_a(M^k)=k\\log_a M",
+      "\\log_a M=\\frac{\\log_b M}{\\log_b a}",
+    ],
+    penjelasan: "Operasi aljabar logaritma memungkinkan perkalian di dalam logaritma diubah menjadi penjumlahan, pembagian menjadi pengurangan, dan pangkat menjadi koefisien di depan logaritma. Sifat-sifat ini berlaku dengan basis yang sama dan numerus yang memenuhi syarat positif. Jangan keliru: logaritma dari jumlah tidak dapat langsung dipecah menjadi jumlah logaritma, sehingga $\\log_a(M+N)\\neq\\log_a M+\\log_a N$.",
+    contoh: [
+      "\\log_2 8+\\log_2 4=\\log_2(8\\times4)=\\log_2 32=5",
+      "\\log_3 81-\\log_3 9=\\log_3\\left(\\frac{81}{9}\\right)=\\log_3 9=2",
+      "\\log_5(25^2)=2\\log_5 25=2\\times2=4",
+      "\\log_2 7=\\frac{\\log 7}{\\log 2}\\quad\\text{(perubahan basis)}",
+    ],
   }
 };
 const HINTS = {
@@ -127,6 +157,8 @@ const HINTS = {
   E9: { t1: "Penjumlahan/pengurangan bentuk akar hanya bisa digabung kalau bilangan di dalam akarnya SAMA (sejenis).", t2: "Contoh: $2\\sqrt3+5\\sqrt3=7\\sqrt3$ (sejenis, boleh), tapi $2\\sqrt3+5\\sqrt2$ tidak bisa disederhanakan (tidak sejenis).", full: "Untuk perkalian, $\\sqrt a\\times\\sqrt b=\\sqrt{ab}$ selalu boleh digabung. Untuk merasionalkan penyebut berbentuk akar, kalikan pembilang & penyebut dengan bentuk yang sama supaya akar di penyebut hilang." },
   E10: { t1: "Cari dulu nilai $p$ (laju perubahan dalam desimal, misalnya 20% = 0,2), lalu tentukan apakah besarannya BERTAMBAH (pakai $1+p$) atau BERKURANG (pakai $1-p$).", t2: "Rumusnya berasal dari perkalian berulang: tiap periode nilainya dikalikan $(1+p)$ atau $(1-p)$ lagi, sehingga setelah $t$ periode faktor itu dipangkatkan $t$.", full: "Pertumbuhan: $N_t=N_0(1+p)^t$. Peluruhan: $M_t=M_0(1-p)^t$. $N_0$/$M_0$ = nilai awal (saat $t=0$), $p$ = persentase perubahan dalam bentuk desimal, $t$ = banyak periode." },
   E11: { t1: "Kalau basis kedua ruas sudah sama (atau bisa disamakan), langsung samakan pangkatnya: $f(x)=g(x)$.", t2: "Kalau ada $a^{2x}$ DAN $a^x$ dalam satu persamaan, itu tandanya bentuk kuadrat tersamar — misalkan $u=a^x$ dulu, selesaikan $u$, baru cari $x$.", full: "Basis sama → samakan pangkat: $a^{f(x)}=a^{g(x)}\\Rightarrow f(x)=g(x)$. Basis beda tapi pangkat sama di kedua ruas → pangkatnya harus 0. Bentuk kuadrat tersamar → substitusi $u=a^x$, selesaikan $Pu^2+Qu+R=0$, lalu kembalikan ke $a^x=u$ (ingat $u$ harus $>0$)." },
+  E12: { t1: "Ubah bentuk logaritma menjadi bentuk eksponen: $\\log_a b=c$ berarti $a^c=b$.", t2: "Contoh: $\\log_2 16=x$ berarti $2^x=16$, sehingga $x=4$.", full: "Ingat hubungan kebalikannya: $\\log_a b=c \\Longleftrightarrow a^c=b$. Cek juga syaratnya: $a>0$, $a\\neq1$, dan $b>0$." },
+  E13: { t1: "Perkalian di dalam log berubah menjadi penjumlahan, sedangkan pembagian berubah menjadi pengurangan.", t2: "Contoh: $\\log_2 8+\\log_2 4=\\log_2(8\\times4)=\\log_2 32=5$.", full: "Gunakan $\\log_a(MN)=\\log_aM+\\log_aN$, $\\log_a(M/N)=\\log_aM-\\log_aN$, dan $\\log_a(M^k)=k\\log_aM$. Hati-hati: $\\log_a(M+N)$ tidak dapat dipecah menjadi $\\log_aM+\\log_aN$." },
 };
 const PRACTICE_POOL = {
   E1: [
@@ -260,6 +292,22 @@ const PRACTICE_POOL = {
     { text: "$25^{x} = 5^{x+3}$, $x = ?$", options: [{ text: "3", correct: true }, { text: "1", tag: "Salah menyamakan basis 25 menjadi $5^2$, tidak dikalikan dengan pangkat x" }, { text: "6", tag: "Salah menyelesaikan persamaan linear setelah basis disamakan" }, { text: "-3", tag: "Salah tanda saat menyelesaikan persamaan linear" }, { text: "9", tag: "Tidak menyamakan basis kedua ruas dengan benar sebelum menyamakan pangkat" }] },
     { text: "Populasi menyusut mengikuti $200\\cdot(0{,}5)^t = 25$. Berapa nilai $t$?", options: [{ text: "8", tag: "Mengira 25 harus dibagi langsung ke 200 lalu dijadikan nilai t" }, { text: "175", tag: "Mengurangkan 25 dari 200, tidak menyelesaikan persamaan eksponen" }, { text: "4", tag: "Kurang teliti menghitung, satu langkah lebih dari seharusnya" }, { text: "3", correct: true }, { text: "2", tag: "Kurang satu langkah perhitungan, populasi belum mencapai 25" }] },
     { text: "$2 \\cdot 3^{x} = 54$, $x = ?$", options: [{ text: "6", tag: "Tidak membagi kedua ruas dengan koefisien 2 sebelum menyamakan basis" }, { text: "9", tag: "Salah mengubah hasil bagi (27) menjadi bentuk pangkat basis 3" }, { text: "27", tag: "Lupa menyelesaikan persamaan eksponen, hanya menuliskan hasil bagi" }, { text: "1", tag: "Salah menyamakan basis, keliru mengubah 27 menjadi $3^1$" }, { text: "3", correct: true }] },
+  ],
+  E12: [
+    { text: "$\\log_2 8 = ?$", options: [{ text: "2", tag: "Mengira logaritma berarti membagi 8 dengan 2" }, { text: "3", correct: true }, { text: "4", tag: "Salah menentukan pangkat yang menghasilkan 8" }, { text: "6", tag: "Menjumlahkan basis dan numerus" }, { text: "16", tag: "Mengubah logaritma menjadi perkalian" }] },
+    { text: "$\\log_5 125 = ?$", options: [{ text: "2", tag: "Mengira 5²=125" }, { text: "3", correct: true }, { text: "4", tag: "Salah menghitung pangkat basis 5" }, { text: "25", tag: "Membagi numerus dengan basis" }, { text: "625", tag: "Menghitung 5⁴ alih-alih 5³" }] },
+    { text: "$\\log_3 \\frac{1}{27} = ?$", options: [{ text: "3", tag: "Mengabaikan bahwa numerus kurang dari 1 menghasilkan pangkat negatif" }, { text: "-3", correct: true }, { text: "-9", tag: "Salah menghitung pangkat negatif" }, { text: "1/3", tag: "Menganggap logaritma sama dengan kebalikan numerus" }, { text: "27", tag: "Menjawab dengan numerus" }] },
+    { text: "Jika $\\log_2 x=5$, maka $x=?$", options: [{ text: "10", tag: "Mengalikan basis dengan hasil logaritma" }, { text: "25", tag: "Menghitung 5², bukan 2⁵" }, { text: "32", correct: true }, { text: "64", tag: "Menghitung 2⁶" }, { text: "7", tag: "Menjumlahkan 2 dan 5" }] },
+    { text: "Nilai $\\log_{10}0{,}001$ adalah...", options: [{ text: "3", tag: "Mengabaikan bahwa 0,001 adalah 10⁻³" }, { text: "-3", correct: true }, { text: "0,001", tag: "Menjawab dengan numerus" }, { text: "1/3", tag: "Menganggap logaritma sebagai akar" }, { text: "1000", tag: "Membalik 0,001 menjadi 1000 tanpa menentukan pangkat" }] },
+    { text: "Pernyataan yang benar adalah...", options: [{ text: "$\\log_2 8=2$", tag: "Karena 2×2×2=8, pangkatnya sebenarnya 3" }, { text: "$\\log_2 8=3$", correct: true }, { text: "$\\log_8 2=3$", tag: "Tertukar hubungan basis dan numerus" }, { text: "$\\log_3 8=2$", tag: "Mengira 3²=8" }, { text: "$\\log_2 3=8$", tag: "Menukar hasil logaritma dengan numerus" }] },
+  ],
+  E13: [
+    { text: "$\\log_2 8+\\log_2 4 = ?$", options: [{ text: "3", tag: "Hanya mengambil logaritma dari salah satu suku" }, { text: "4", tag: "Salah menjumlahkan hasil logaritma 3+2" }, { text: "5", correct: true }, { text: "6", tag: "Menjumlahkan numerus 8+4 lalu mengambil logaritma" }, { text: "32", tag: "Mengalikan hasil logaritma secara keliru" }] },
+    { text: "$\\log_3 81-\\log_3 9 = ?$", options: [{ text: "1", tag: "Salah menghitung 4−2" }, { text: "2", correct: true }, { text: "3", tag: "Hanya melihat logaritma pertama" }, { text: "4", tag: "Hanya melihat logaritma kedua" }, { text: "9", tag: "Mengurangkan numerus secara langsung" }] },
+    { text: "$\\log_2(8^2)=?$", options: [{ text: "6", correct: true }, { text: "16", tag: "Mengalikan 8 dengan 2, bukan menggunakan sifat logaritma" }, { text: "9", tag: "Menghitung log₂8 lalu lupa mengalikan dengan 2" }, { text: "3", tag: "Mengabaikan pangkat 2" }, { text: "4", tag: "Mengira log₂(8²)=log₂8+1" }] },
+    { text: "$\\log_5\\left(\\frac{125}{25}\\right)=?$", options: [{ text: "1", correct: true }, { text: "2", tag: "Mengurangkan 125−25 lalu mengambil logaritma" }, { text: "3", tag: "Hanya mengambil logaritma pembilang" }, { text: "5", tag: "Menganggap hasilnya sama dengan basis" }, { text: "100", tag: "Mengurangkan numerus tanpa menggunakan sifat logaritma" }] },
+    { text: "Jika $\\log_2 3=p$ dan $\\log_2 5=q$, maka $\\log_2 15=?$", options: [{ text: "$p-q$", tag: "Salah memakai sifat pembagian" }, { text: "$pq$", tag: "Mengalikan dua nilai logaritma" }, { text: "$p+q$", correct: true }, { text: "$p/q$", tag: "Menggunakan pembagian untuk perkalian numerus" }, { text: "15p+q", tag: "Menggabungkan numerus secara langsung" }] },
+    { text: "Manakah yang TIDAK benar?", options: [{ text: "$\\log_a(xy)=\\log_a x+\\log_a y$", tag: "Ini adalah sifat perkalian yang benar" }, { text: "$\\log_a(x/y)=\\log_a x-\\log_a y$", tag: "Ini adalah sifat pembagian yang benar" }, { text: "$\\log_a(x^n)=n\\log_a x$", tag: "Ini adalah sifat pangkat yang benar" }, { text: "$\\log_a(x+y)=\\log_a x+\\log_a y$", correct: true }, { text: "$\\log_a x=\\frac{\\log_b x}{\\log_b a}$", tag: "Ini adalah sifat perubahan basis yang benar" }] },
   ],
 };
 const KB_ROWS = CONCEPT_ORDER.map((c) => ({
@@ -461,9 +509,9 @@ const BADGES = [
   { id: "first_correct", nama: "Langkah Pertama", desc: "Menjawab 1 soal latihan dengan benar", icon: "✅", check: (s) => s.correctCount >= 1 },
   { id: "ten_correct", nama: "Latihan 10", desc: "Menjawab 10 soal latihan dengan benar", icon: "🎯", check: (s) => s.correctCount >= 10 },
   { id: "twentyfive_correct", nama: "Latihan 25", desc: "Menjawab 25 soal latihan dengan benar", icon: "💯", check: (s) => s.correctCount >= 25 },
-  { id: "one_mastered", nama: "Penakluk Konsep", desc: "Menguasai 1 konsep eksponen", icon: "⭐", check: (s) => s.masteredCount >= 1 },
-  { id: "three_mastered", nama: "Setengah Jalan", desc: "Menguasai 3 konsep eksponen", icon: "🌟", check: (s) => s.masteredCount >= 3 },
-  { id: "all_mastered", nama: "Master Eksponen", desc: "Menguasai semua konsep eksponen", icon: "🏆", check: (s) => s.masteredCount >= CONCEPT_ORDER.length },
+  { id: "one_mastered", nama: "Penakluk Konsep", desc: "Menguasai 1 konsep", icon: "⭐", check: (s) => s.masteredCount >= 1 },
+  { id: "three_mastered", nama: "Setengah Jalan", desc: "Menguasai 3 konsep", icon: "🌟", check: (s) => s.masteredCount >= 3 },
+  { id: "all_mastered", nama: "Master Eksponen & Logaritma", desc: "Menguasai semua konsep", icon: "🏆", check: (s) => s.masteredCount >= CONCEPT_ORDER.length },
   { id: "streak_3", nama: "Streak 3 Hari", desc: "Belajar 3 hari berturut-turut", icon: "🔥", check: (s) => s.streak >= 3 },
   { id: "streak_7", nama: "Streak 7 Hari", desc: "Belajar 7 hari berturut-turut", icon: "💪", check: (s) => s.streak >= 7 },
 ];
@@ -2532,7 +2580,7 @@ function AppInner() {
                       setMessages={setTutorMessages}
                       onClearHistory={clearTutorHistory}
                       context={
-                        "Materi yang dipelajari siswa: Eksponensial, mencakup konsep " +
+                        "Materi yang dipelajari siswa: Eksponen dan Logaritma, mencakup konsep " +
                         CONCEPT_ORDER.map((c) => CONCEPTS[c].name).join(", ") + ". " +
                         (tutorFocusConcept
                           ? "Siswa sedang butuh pendalaman khusus pada konsep: " + CONCEPTS[tutorFocusConcept].name + " (" + EFFECTIVE_MATERI[tutorFocusConcept].penjelasan + "). Fokuskan bantuanmu ke konsep ini."
@@ -2545,7 +2593,7 @@ function AppInner() {
                 {progressLoaded && screen === "materiList" && (
                   <div className="card">
                     <div className="tag-eyebrow">Materi Ajar</div>
-                    <h2 className="disp" style={{ fontSize: 19, marginBottom: 14 }}>Eksponensial · {CONCEPT_ORDER.length} sub-materi</h2>
+                    <h2 className="disp" style={{ fontSize: 19, marginBottom: 14 }}>Eksponen & Logaritma · {CONCEPT_ORDER.length} sub-materi</h2>
                     {CONCEPT_ORDER.map((c, i) => {
                       const st = statuses[c];
                       return (
