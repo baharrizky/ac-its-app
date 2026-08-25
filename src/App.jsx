@@ -34,10 +34,13 @@ const CONCEPTS = {
   E9:  { name: "Operasi Aljabar Bentuk Akar",   short: "√a ± √b",   prereq: ["E8"] },
   E10: { name: "Pertumbuhan & Peluruhan Eksponensial", short: "Nₜ=N₀(1±p)ᵗ", prereq: ["E1", "E2"] },
   E11: { name: "Persamaan Eksponen",            short: "aˣ=aʸ",     prereq: ["E1", "E2", "E3", "E4", "E6", "E7"] },
-  E12: { name: "Logaritma",                       short: "logₐx=y",   prereq: ["E1", "E11"] },
-  E13: { name: "Operasi Aljabar Logaritma",        short: "logₐ(xy)",  prereq: ["E12"] },
+  E12: { name: "Konsep Dasar Logaritma & Sifat Dasar", short: "logₐx=y", prereq: ["E1", "E11"] },
+  E13: { name: "Persamaan Logaritma",             short: "logₐ f(x)=c", prereq: ["E12"] },
+  E14: { name: "Pertidaksamaan Logaritma",        short: "logₐ f(x) ⋚ c", prereq: ["E12", "E13"] },
+  E15: { name: "Fungsi Logaritma",                short: "y=logₐx", prereq: ["E12"] },
+  E16: { name: "Operasi Aljabar Logaritma",       short: "logₐ(MN)", prereq: ["E12"] },
 };
-const CONCEPT_ORDER = ["E1", "E2", "E3", "E4", "E5", "E6", "E7", "E8", "E9", "E10", "E11", "E12", "E13"];
+const CONCEPT_ORDER = ["E1", "E2", "E3", "E4", "E5", "E6", "E7", "E8", "E9", "E10", "E11", "E12", "E13", "E14", "E15", "E16"];
 const KELAS_OPTIONS = Array.from({ length: 10 }, (_, i) => `X.${i + 1}`);
 const SEKOLAH_OPTIONS = ["SMAN 5 Kota Jambi"];
 const EMPTY_ATTEMPTS = Object.fromEntries(CONCEPT_ORDER.map((c) => [c, []]));
@@ -120,28 +123,75 @@ const MATERI = {
     formula: [
       "\\log_a b = c \\Longleftrightarrow a^c=b \\quad (a>0,\\ a\\neq1,\\ b>0)",
       "\\log_a 1=0,\\quad \\log_a a=1",
+      "\\log_a(MN)=\\log_aM+\\log_aN",
+      "\\log_a\\left(\\frac{M}{N}\\right)=\\log_aM-\\log_aN",
+      "\\log_a(M^k)=k\\log_aM",
+      "\\log_aM=\\frac{\\log_bM}{\\log_ba}"
     ],
-    penjelasan: "Logaritma adalah operasi kebalikan dari perpangkatan. Pada $\\log_a b=c$, bilangan $a$ disebut basis, $b$ disebut numerus, dan $c$ adalah hasil logaritma. Pertanyaan utamanya adalah: basis $a$ harus dipangkatkan berapa agar menghasilkan $b$? Syarat penting: $a>0$, $a\\neq1$, dan $b>0$.",
+    penjelasan: "Logaritma merupakan kebalikan dari perpangkatan. Pada \\$\\log_a b=c\\$, a adalah basis, b adalah numerus, dan c adalah hasil logaritma. Syarat logaritma adalah basis a>0, a\\neq1, dan numerus b>0. Sifat dasar yang perlu dikuasai meliputi logaritma dari 1, logaritma dari basis, sifat perkalian, pembagian, pangkat, dan perubahan basis.",
     contoh: [
       "\\log_2 8=3 \\quad\\text{karena}\\quad 2^3=8",
-      "\\log_5 25=2 \\quad\\text{karena}\\quad 5^2=25",
-      "\\log_3 \\frac{1}{9}=-2 \\quad\\text{karena}\\quad 3^{-2}=\\frac{1}{9}",
-      "\\log_{10}1000=3 \\quad\\text{dan}\\quad \\log_{10}0{,}01=-2",
+      "\\log_5 25=2,\\quad \\log_3\\frac{1}{9}=-2",
+      "\\log_2(8\\times4)=\\log_2 8+\\log_2 4=5",
+      "\\log_3(81^2)=2\\log_3 81=8",
+      "\\log_2 7=\\frac{\\log 7}{\\log 2}\\quad\\text{(perubahan basis)}"
     ],
   },
   E13: {
     formula: [
-      "\\log_a(MN)=\\log_a M+\\log_a N",
-      "\\log_a\\left(\\frac{M}{N}\\right)=\\log_a M-\\log_a N",
-      "\\log_a(M^k)=k\\log_a M",
-      "\\log_a M=\\frac{\\log_b M}{\\log_b a}",
+      "\\log_a f(x)=c \\Longleftrightarrow f(x)=a^c",
+      "\\log_a f(x)=\\log_a g(x) \\Longleftrightarrow f(x)=g(x)"
     ],
-    penjelasan: "Operasi aljabar logaritma memungkinkan perkalian di dalam logaritma diubah menjadi penjumlahan, pembagian menjadi pengurangan, dan pangkat menjadi koefisien di depan logaritma. Sifat-sifat ini berlaku dengan basis yang sama dan numerus yang memenuhi syarat positif. Jangan keliru: logaritma dari jumlah tidak dapat langsung dipecah menjadi jumlah logaritma, sehingga $\\log_a(M+N)\\neq\\log_a M+\\log_a N$.",
+    penjelasan: "Persamaan logaritma adalah persamaan yang memuat bentuk logaritma dan variabel. Untuk menyelesaikannya, ubah ke bentuk eksponen jika salah satu ruas berupa konstanta, atau samakan numerus jika kedua ruas memiliki basis yang sama. Setelah memperoleh calon penyelesaian, selalu periksa syarat numerus harus positif dan pastikan solusi memenuhi persamaan awal.",
     contoh: [
-      "\\log_2 8+\\log_2 4=\\log_2(8\\times4)=\\log_2 32=5",
-      "\\log_3 81-\\log_3 9=\\log_3\\left(\\frac{81}{9}\\right)=\\log_3 9=2",
-      "\\log_5(25^2)=2\\log_5 25=2\\times2=4",
-      "\\log_2 7=\\frac{\\log 7}{\\log 2}\\quad\\text{(perubahan basis)}",
+      "\\log_2(x-1)=3 \\Rightarrow x-1=2^3 \\Rightarrow x=9",
+      "\\log_3(2x+1)=\\log_3 7 \\Rightarrow 2x+1=7 \\Rightarrow x=3",
+      "\\log_5(x^2-4)=1 \\Rightarrow x^2-4=5 \\Rightarrow x=\\pm3",
+      "\\log_2(x-2)+\\log_2(x+2)=3 \\Rightarrow x^2-4=8 \\Rightarrow x=2\\sqrt3 \\text{ (syarat }x>2\\text{)}"
+    ],
+  },
+  E14: {
+    formula: [
+      "\\log_a f(x)>\\log_a g(x) \\Rightarrow \\begin{cases}f(x)>g(x),&a>1\\f(x)<g(x),&0<a<1\\end{cases}",
+      "\\log_a f(x)\\;\\lessgtr\\;c \\Longleftrightarrow f(x)\\;\\lessgtr\\;a^c\\quad(a>1)"
+    ],
+    penjelasan: "Pertidaksamaan logaritma diselesaikan dengan memperhatikan sifat fungsi logaritma. Jika basis a>1, fungsi logaritma naik sehingga arah pertidaksamaan tetap. Jika 0<a<1, fungsi logaritma turun sehingga arah pertidaksamaan berbalik. Selain itu, setiap numerus harus memenuhi syarat positif. Karena itu, penyelesaian harus menggabungkan hasil pertidaksamaan dengan domain logaritma.",
+    contoh: [
+      "\\log_2(x-1)>3 \\Rightarrow x-1>8 \\Rightarrow x>9",
+      "\\log_{1/2}(x+2)\\le2 \\Rightarrow x+2\\ge\\left(\\frac12\\right)^2 \\Rightarrow x\\ge-\\frac74",
+      "\\log_3(x+1)<\\log_3 7 \\Rightarrow x+1<7 \\Rightarrow x<6,\\quad x>-1",
+      "\\log_{1/3}(2x-1)>\\log_{1/3}4 \\Rightarrow 2x-1<4 \\Rightarrow x<\\frac52,\\quad x>\\frac12"
+    ],
+  },
+  E15: {
+    formula: [
+      "f(x)=\\log_a x \\quad (a>0,\\ a\\neq1)",
+      "D_f=(0,\\infty),\\quad R_f=(-\\infty,\\infty)",
+      "a>1\\Rightarrow\\text{grafik naik},\\quad 0<a<1\\Rightarrow\\text{grafik turun}",
+      "f^{-1}(x)=a^x"
+    ],
+    penjelasan: "Fungsi logaritma adalah fungsi berbentuk f(x)=log_a x dengan a>0 dan a\\neq1. Domainnya adalah x>0 dan range-nya seluruh bilangan real. Grafik selalu melalui titik (1,0) dan (a,1), serta memiliki asimtot vertikal x=0. Jika a>1 grafik naik, sedangkan jika 0<a<1 grafik turun. Fungsi logaritma merupakan invers dari fungsi eksponensial y=a^x.",
+    contoh: [
+      "f(x)=\\log_2x: \\ f(1)=0,\\ f(2)=1,\\ f(8)=3",
+      "f(x)=\\log_{1/2}x \\text{ adalah fungsi menurun karena }0<\\frac12<1",
+      "Grafik y=\\log_3x \\text{ melalui }(1,0),(3,1),(9,2)",
+      "y=\\log_2x \\text{ dan }y=2^x\\text{ merupakan pasangan fungsi invers}"
+    ],
+  },
+  E16: {
+    formula: [
+      "\\log_a(MN)=\\log_aM+\\log_aN",
+      "\\log_a\\left(\\frac{M}{N}\\right)=\\log_aM-\\log_aN",
+      "\\log_a(M^k)=k\\log_aM",
+      "\\log_aM=\\frac{\\log_bM}{\\log_ba}"
+    ],
+    penjelasan: "Operasi aljabar logaritma menggunakan sifat-sifat logaritma untuk menyederhanakan bentuk, mengembangkan logaritma, atau menggabungkan beberapa logaritma. Perkalian berubah menjadi penjumlahan, pembagian menjadi pengurangan, dan pangkat menjadi koefisien. Semua numerus harus memenuhi syarat positif. Ingat bahwa logaritma penjumlahan tidak dapat dipecah secara langsung.",
+    contoh: [
+      "\\log_2 8+\\log_2 4=\\log_2 32=5",
+      "\\log_3 81-\\log_3 9=\\log_3 9=2",
+      "3\\log_5 2=\\log_5(2^3)=\\log_5 8",
+      "\\log_2 7=\\frac{\\log 7}{\\log 2}",
+      "\\log_a(x+1)\\neq\\log_a x+\\log_a1"
     ],
   }
 };
@@ -157,8 +207,11 @@ const HINTS = {
   E9: { t1: "Penjumlahan/pengurangan bentuk akar hanya bisa digabung kalau bilangan di dalam akarnya SAMA (sejenis).", t2: "Contoh: $2\\sqrt3+5\\sqrt3=7\\sqrt3$ (sejenis, boleh), tapi $2\\sqrt3+5\\sqrt2$ tidak bisa disederhanakan (tidak sejenis).", full: "Untuk perkalian, $\\sqrt a\\times\\sqrt b=\\sqrt{ab}$ selalu boleh digabung. Untuk merasionalkan penyebut berbentuk akar, kalikan pembilang & penyebut dengan bentuk yang sama supaya akar di penyebut hilang." },
   E10: { t1: "Cari dulu nilai $p$ (laju perubahan dalam desimal, misalnya 20% = 0,2), lalu tentukan apakah besarannya BERTAMBAH (pakai $1+p$) atau BERKURANG (pakai $1-p$).", t2: "Rumusnya berasal dari perkalian berulang: tiap periode nilainya dikalikan $(1+p)$ atau $(1-p)$ lagi, sehingga setelah $t$ periode faktor itu dipangkatkan $t$.", full: "Pertumbuhan: $N_t=N_0(1+p)^t$. Peluruhan: $M_t=M_0(1-p)^t$. $N_0$/$M_0$ = nilai awal (saat $t=0$), $p$ = persentase perubahan dalam bentuk desimal, $t$ = banyak periode." },
   E11: { t1: "Kalau basis kedua ruas sudah sama (atau bisa disamakan), langsung samakan pangkatnya: $f(x)=g(x)$.", t2: "Kalau ada $a^{2x}$ DAN $a^x$ dalam satu persamaan, itu tandanya bentuk kuadrat tersamar — misalkan $u=a^x$ dulu, selesaikan $u$, baru cari $x$.", full: "Basis sama → samakan pangkat: $a^{f(x)}=a^{g(x)}\\Rightarrow f(x)=g(x)$. Basis beda tapi pangkat sama di kedua ruas → pangkatnya harus 0. Bentuk kuadrat tersamar → substitusi $u=a^x$, selesaikan $Pu^2+Qu+R=0$, lalu kembalikan ke $a^x=u$ (ingat $u$ harus $>0$)." },
-  E12: { t1: "Ubah bentuk logaritma menjadi bentuk eksponen: $\\log_a b=c$ berarti $a^c=b$.", t2: "Contoh: $\\log_2 16=x$ berarti $2^x=16$, sehingga $x=4$.", full: "Ingat hubungan kebalikannya: $\\log_a b=c \\Longleftrightarrow a^c=b$. Cek juga syaratnya: $a>0$, $a\\neq1$, dan $b>0$." },
-  E13: { t1: "Perkalian di dalam log berubah menjadi penjumlahan, sedangkan pembagian berubah menjadi pengurangan.", t2: "Contoh: $\\log_2 8+\\log_2 4=\\log_2(8\\times4)=\\log_2 32=5$.", full: "Gunakan $\\log_a(MN)=\\log_aM+\\log_aN$, $\\log_a(M/N)=\\log_aM-\\log_aN$, dan $\\log_a(M^k)=k\\log_aM$. Hati-hati: $\\log_a(M+N)$ tidak dapat dipecah menjadi $\\log_aM+\\log_aN$." },
+  E12: { t1: "Ingat hubungan kebalikan: $\\log_a b=c$ berarti $a^c=b$.", t2: "Kenali syarat basis $a>0$, $a\\neq1$, dan numerus $b>0$. Hafalkan juga $\\log_a1=0$ dan $\\log_a a=1$.", full: "Kuasai makna basis, numerus, hasil logaritma, hubungan logaritma-eksponen, serta sifat dasar perkalian, pembagian, pangkat, dan perubahan basis." },
+  E13: { t1: "Jika $\\log_a f(x)=c$, ubah menjadi $f(x)=a^c$.", t2: "Jika kedua ruas memiliki basis sama, samakan numerusnya. Setelah itu cek domain: semua numerus harus positif.", full: "Langkah aman: tentukan syarat numerus > 0, ubah atau samakan bentuk logaritma, selesaikan persamaan, lalu substitusikan kembali untuk memeriksa solusi." },
+  E14: { t1: "Perhatikan basis. Jika $a>1$, arah pertidaksamaan tetap; jika $0<a<1$, arah pertidaksamaan berbalik.", t2: "Jangan lupa syarat numerus setiap logaritma harus positif.", full: "Tentukan domain terlebih dahulu, gunakan sifat naik/turun fungsi logaritma sesuai basis, selesaikan pertidaksamaan, lalu iriskan dengan domain." },
+  E15: { t1: "Fungsi logaritma berbentuk $f(x)=\\log_a x$ dan hanya menerima $x>0$.", t2: "Jika $a>1$ grafik naik; jika $0<a<1$ grafik turun. Grafik selalu melalui $(1,0)$.", full: "Domain $(0,\\infty)$, range seluruh bilangan real, asimtot vertikal $x=0$, dan fungsi logaritma merupakan invers dari $y=a^x$." },
+  E16: { t1: "Perkalian di dalam log menjadi penjumlahan, pembagian menjadi pengurangan, dan pangkat menjadi koefisien.", t2: "Contoh: $\\log_2 8+\\log_2 4=\\log_2(8\\times4)$.", full: "Gunakan sifat produk, hasil bagi, dan pangkat hanya pada bentuk yang memenuhi syarat. Ingat: $\\log_a(M+N)$ tidak dapat dipecah menjadi $\\log_aM+\\log_aN$." },
 };
 const PRACTICE_POOL = {
   E1: [
@@ -294,20 +347,54 @@ const PRACTICE_POOL = {
     { text: "$2 \\cdot 3^{x} = 54$, $x = ?$", options: [{ text: "6", tag: "Tidak membagi kedua ruas dengan koefisien 2 sebelum menyamakan basis" }, { text: "9", tag: "Salah mengubah hasil bagi (27) menjadi bentuk pangkat basis 3" }, { text: "27", tag: "Lupa menyelesaikan persamaan eksponen, hanya menuliskan hasil bagi" }, { text: "1", tag: "Salah menyamakan basis, keliru mengubah 27 menjadi $3^1$" }, { text: "3", correct: true }] },
   ],
   E12: [
-    { text: "$\\log_2 8 = ?$", options: [{ text: "2", tag: "Mengira logaritma berarti membagi 8 dengan 2" }, { text: "3", correct: true }, { text: "4", tag: "Salah menentukan pangkat yang menghasilkan 8" }, { text: "6", tag: "Menjumlahkan basis dan numerus" }, { text: "16", tag: "Mengubah logaritma menjadi perkalian" }] },
-    { text: "$\\log_5 125 = ?$", options: [{ text: "2", tag: "Mengira 5²=125" }, { text: "3", correct: true }, { text: "4", tag: "Salah menghitung pangkat basis 5" }, { text: "25", tag: "Membagi numerus dengan basis" }, { text: "625", tag: "Menghitung 5⁴ alih-alih 5³" }] },
-    { text: "$\\log_3 \\frac{1}{27} = ?$", options: [{ text: "3", tag: "Mengabaikan bahwa numerus kurang dari 1 menghasilkan pangkat negatif" }, { text: "-3", correct: true }, { text: "-9", tag: "Salah menghitung pangkat negatif" }, { text: "1/3", tag: "Menganggap logaritma sama dengan kebalikan numerus" }, { text: "27", tag: "Menjawab dengan numerus" }] },
-    { text: "Jika $\\log_2 x=5$, maka $x=?$", options: [{ text: "10", tag: "Mengalikan basis dengan hasil logaritma" }, { text: "25", tag: "Menghitung 5², bukan 2⁵" }, { text: "32", correct: true }, { text: "64", tag: "Menghitung 2⁶" }, { text: "7", tag: "Menjumlahkan 2 dan 5" }] },
-    { text: "Nilai $\\log_{10}0{,}001$ adalah...", options: [{ text: "3", tag: "Mengabaikan bahwa 0,001 adalah 10⁻³" }, { text: "-3", correct: true }, { text: "0,001", tag: "Menjawab dengan numerus" }, { text: "1/3", tag: "Menganggap logaritma sebagai akar" }, { text: "1000", tag: "Membalik 0,001 menjadi 1000 tanpa menentukan pangkat" }] },
-    { text: "Pernyataan yang benar adalah...", options: [{ text: "$\\log_2 8=2$", tag: "Karena 2×2×2=8, pangkatnya sebenarnya 3" }, { text: "$\\log_2 8=3$", correct: true }, { text: "$\\log_8 2=3$", tag: "Tertukar hubungan basis dan numerus" }, { text: "$\\log_3 8=2$", tag: "Mengira 3²=8" }, { text: "$\\log_2 3=8$", tag: "Menukar hasil logaritma dengan numerus" }] },
+    { text: "$\\log_2 16=?", options: [{text:"2",tag:"Mengira 2²=16"},{text:"3",tag:"Salah menentukan pangkat basis 2"},{text:"4",correct:true},{text:"8",tag:"Menjawab numerus dibagi basis"},{text:"16",tag:"Menjawab numerus"}] },
+    { text: "Jika $\\log_3 x=4$, maka $x=?", options: [{text:"12",tag:"Mengalikan basis dengan hasil logaritma"},{text:"27",tag:"Menghitung 3³"},{text:"81",correct:true},{text:"64",tag:"Menghitung 4³"},{text:"7",tag:"Menjumlahkan 3 dan 4"}] },
+    { text: "Nilai $\\log_5 1$ adalah...", options: [{text:"0",correct:true},{text:"1",tag:"Mengira logaritma basis selalu 1"},{text:"5",tag:"Menjawab basis"},{text:"-1",tag:"Keliru menganggap 1 sebagai pecahan negatif"},{text:"Tidak terdefinisi",tag:"Mengira numerus 1 tidak memenuhi syarat"}] },
+    { text: "Syarat basis $a$ pada $\\log_a x$ adalah...", options: [{text:"a>0 dan a\\neq1",correct:true},{text:"a>1 saja",tag:"Mengabaikan basis 0<a<1"},{text:"a<0",tag:"Basis logaritma tidak boleh negatif"},{text:"a\\neq0 saja",tag:"Lupa syarat a\\neq1 dan a>0"},{text:"a=1",tag:"Basis 1 tidak diperbolehkan"}] },
+    { text: "Syarat numerus pada $\\log_a x$ adalah...", options: [{text:"x\\ge0",tag:"Mengira nol masih diperbolehkan"},{text:"x>0",correct:true},{text:"x<0",tag:"Salah tanda syarat domain"},{text:"x\\neq1",tag:"Syarat ini bukan untuk numerus secara umum"},{text:"semua real",tag:"Mengabaikan domain logaritma"}] },
+    { text: "$\\log_3\\frac{1}{27}=?", options: [{text:"3",tag:"Mengabaikan pangkat negatif"},{text:"-3",correct:true},{text:"-9",tag:"Salah menghitung pangkat"},{text:"1/3",tag:"Menganggap logaritma sebagai kebalikan numerus"},{text:"27",tag:"Menjawab numerus"}] },
+    { text: "Pernyataan yang benar adalah...", options: [{text:"$\\log_a a=0$",tag:"Tertukar dengan logaritma 1"},{text:"$\\log_a1=1$",tag:"Tertukar dengan logaritma basis"},{text:"$\\log_a a=1$",correct:true},{text:"$\\log_a0=1$",tag:"Logaritma 0 tidak terdefinisi"},{text:"$\\log_1a=1$",tag:"Basis 1 tidak diperbolehkan"}] },
+    { text: "$\\log_2 7$ dalam bentuk perubahan basis adalah...", options: [{text:"$\\frac{\\log2}{\\log7}$",tag:"Basis dan numerus tertukar"},{text:"$\\frac{\\log7}{\\log2}$",correct:true},{text:"$\\log14$",tag:"Mengalikan basis dan numerus"},{text:"$7\\log2$",tag:"Salah menerapkan sifat logaritma"},{text:"$2\\log7$",tag:"Salah menerapkan sifat logaritma"}] },
   ],
   E13: [
-    { text: "$\\log_2 8+\\log_2 4 = ?$", options: [{ text: "3", tag: "Hanya mengambil logaritma dari salah satu suku" }, { text: "4", tag: "Salah menjumlahkan hasil logaritma 3+2" }, { text: "5", correct: true }, { text: "6", tag: "Menjumlahkan numerus 8+4 lalu mengambil logaritma" }, { text: "32", tag: "Mengalikan hasil logaritma secara keliru" }] },
-    { text: "$\\log_3 81-\\log_3 9 = ?$", options: [{ text: "1", tag: "Salah menghitung 4−2" }, { text: "2", correct: true }, { text: "3", tag: "Hanya melihat logaritma pertama" }, { text: "4", tag: "Hanya melihat logaritma kedua" }, { text: "9", tag: "Mengurangkan numerus secara langsung" }] },
-    { text: "$\\log_2(8^2)=?$", options: [{ text: "6", correct: true }, { text: "16", tag: "Mengalikan 8 dengan 2, bukan menggunakan sifat logaritma" }, { text: "9", tag: "Menghitung log₂8 lalu lupa mengalikan dengan 2" }, { text: "3", tag: "Mengabaikan pangkat 2" }, { text: "4", tag: "Mengira log₂(8²)=log₂8+1" }] },
-    { text: "$\\log_5\\left(\\frac{125}{25}\\right)=?$", options: [{ text: "1", correct: true }, { text: "2", tag: "Mengurangkan 125−25 lalu mengambil logaritma" }, { text: "3", tag: "Hanya mengambil logaritma pembilang" }, { text: "5", tag: "Menganggap hasilnya sama dengan basis" }, { text: "100", tag: "Mengurangkan numerus tanpa menggunakan sifat logaritma" }] },
-    { text: "Jika $\\log_2 3=p$ dan $\\log_2 5=q$, maka $\\log_2 15=?$", options: [{ text: "$p-q$", tag: "Salah memakai sifat pembagian" }, { text: "$pq$", tag: "Mengalikan dua nilai logaritma" }, { text: "$p+q$", correct: true }, { text: "$p/q$", tag: "Menggunakan pembagian untuk perkalian numerus" }, { text: "15p+q", tag: "Menggabungkan numerus secara langsung" }] },
-    { text: "Manakah yang TIDAK benar?", options: [{ text: "$\\log_a(xy)=\\log_a x+\\log_a y$", tag: "Ini adalah sifat perkalian yang benar" }, { text: "$\\log_a(x/y)=\\log_a x-\\log_a y$", tag: "Ini adalah sifat pembagian yang benar" }, { text: "$\\log_a(x^n)=n\\log_a x$", tag: "Ini adalah sifat pangkat yang benar" }, { text: "$\\log_a(x+y)=\\log_a x+\\log_a y$", correct: true }, { text: "$\\log_a x=\\frac{\\log_b x}{\\log_b a}$", tag: "Ini adalah sifat perubahan basis yang benar" }] },
+    { text: "$\\log_2(x-1)=3$, maka $x=?", options: [{text:"7",tag:"Mengira x-1=2×3"},{text:"8",tag:"Lupa menambahkan 1"},{text:"9",correct:true},{text:"6",tag:"Mengurangkan basis dari 8"},{text:"10",tag:"Salah operasi akhir"}] },
+    { text: "$\\log_3(2x+1)=\\log_3 7$, maka $x=?", options: [{text:"2",tag:"Salah menyelesaikan 2x+1=7"},{text:"3",correct:true},{text:"4",tag:"Lupa membagi dengan 2"},{text:"6",tag:"Menganggap x=7-1"},{text:"7",tag:"Menjawab numerus"}] },
+    { text: "$\\log_5(x-2)=2$, maka $x=?", options: [{text:"7",tag:"Menghitung 5+2"},{text:"23",tag:"Menghitung 5×? secara keliru"},{text:"27",correct:true},{text:"25",tag:"Lupa menambahkan 2"},{text:"10",tag:"Mengalikan basis dengan pangkat"}] },
+    { text: "$\\log_2(x^2-4)=3$, solusi yang memenuhi adalah...", options: [{text:"x=\\pm2",tag:"Membuat numerus 0, tidak memenuhi domain"},{text:"x=\\pm3",correct:true},{text:"x=3 saja",tag:"Mengabaikan akar negatif yang juga memenuhi domain"},{text:"x=\\pm4",tag:"Salah menyelesaikan x²=12"},{text:"x=2",tag:"Tidak memenuhi numerus positif"}] },
+    { text: "$\\log_4(x+3)=\\log_4 7$, maka $x=?", options: [{text:"3",tag:"Mengurangi basis 4 dari 7"},{text:"4",correct:true},{text:"7",tag:"Lupa mengurangi 3"},{text:"10",tag:"Menjumlahkan 3 dan 7"},{text:"-4",tag:"Salah tanda"}] },
+    { text: "Untuk persamaan $\\log_2(x-3)=\\log_2(2x-7)$, nilai $x$ adalah...", options: [{text:"2",tag:"Tidak memenuhi domain x>3"},{text:"3",tag:"Numerus pertama menjadi 0"},{text:"4",correct:true},{text:"5",tag:"Salah menyamakan numerus"},{text:"7",tag:"Menjawab konstanta"}] },
+    { text: "$\\log_3(x)+\\log_3(x-2)=1$. Nilai $x$ yang memenuhi adalah...", options: [{text:"1",tag:"Tidak memenuhi domain x>2"},{text:"2",tag:"Numerus kedua 0"},{text:"3",correct:true},{text:"-1",tag:"Tidak memenuhi domain"},{text:"6",tag:"Salah menyelesaikan persamaan kuadrat"}] },
+    { text: "Langkah yang wajib dilakukan setelah memperoleh calon solusi persamaan logaritma adalah...", options: [{text:"Mengabaikan domain",tag:"Domain menentukan apakah numerus valid"},{text:"Mengganti basis menjadi 10",tag:"Tidak selalu diperlukan"},{text:"Memeriksa solusi pada persamaan awal dan syarat numerus",correct:true},{text:"Mengalikan semua bilangan dengan basis",tag:"Bukan prosedur umum"},{text:"Selalu mengambil solusi positif",tag:"Solusi harus berdasarkan persamaan dan domain"}] },
+  ],
+  E14: [
+    { text: "$\\log_2(x-1)>3$, maka...", options: [{text:"x>8",tag:"Lupa menambahkan 1"},{text:"x>9",correct:true},{text:"x<9",tag:"Membalik arah padahal basis >1"},{text:"x\\ge9",tag:"Mengubah > menjadi ≥"},{text:"x<8",tag:"Salah arah dan salah konstanta"}] },
+    { text: "$\\log_{1/2}(x+2)\\le2$, maka...", options: [{text:"x\\le-7/4",tag:"Tidak membalik arah untuk basis <1"},{text:"x\\ge-7/4",correct:true},{text:"x> -2",tag:"Hanya menggunakan domain"},{text:"x\\le2",tag:"Mengabaikan perubahan bentuk eksponen"},{text:"x\\ge2",tag:"Salah menghitung (1/2)²"}] },
+    { text: "Jika $0<a<1$, maka fungsi $y=\\log_a x$ bersifat...", options: [{text:"naik",tag:"Berlaku untuk a>1"},{text:"turun",correct:true},{text:"konstan",tag:"Logaritma bukan fungsi konstan"},{text:"parabola",tag:"Salah mengenali bentuk grafik"},{text:"tidak terdefinisi",tag:"Fungsi tetap terdefinisi untuk x>0"}] },
+    { text: "$\\log_3(x+1)<\\log_3 7$, maka himpunan penyelesaiannya...", options: [{text:"x<6",tag:"Lupa domain x>-1"},{text:"x>-1",tag:"Hanya menggunakan domain"},{text:"-1<x<6",correct:true},{text:"x>6",tag:"Membalik arah padahal basis >1"},{text:"x< -1",tag:"Tidak memenuhi domain"}] },
+    { text: "$\\log_{1/3}(2x-1)>\\log_{1/3}4$, maka...", options: [{text:"x>5/2",tag:"Tidak membalik arah untuk basis <1"},{text:"x<5/2",tag:"Lupa domain 2x-1>0"},{text:"1/2<x<5/2",correct:true},{text:"x>1/2",tag:"Hanya menggunakan domain"},{text:"x<1/2",tag:"Tidak memenuhi domain"}] },
+    { text: "Pada pertidaksamaan logaritma, mengapa arah pertidaksamaan berubah saat $0<a<1$?", options: [{text:"Karena numerus selalu negatif",tag:"Numerus harus positif"},{text:"Karena fungsi logaritma menurun",correct:true},{text:"Karena basis harus 0",tag:"Basis 0 tidak diperbolehkan"},{text:"Karena logaritma tidak punya domain",tag:"Logaritma memiliki domain x>0"},{text:"Karena pangkat selalu negatif",tag:"Tidak selalu"}] },
+    { text: "$\\log_5(x-2)\\ge1$, maka...", options: [{text:"x\\ge3",correct:true},{text:"x>2 saja",tag:"Hanya menggunakan domain"},{text:"x\\le3",tag:"Membalik arah padahal basis >1"},{text:"x\\ge2",tag:"Batas numerus harus menghasilkan ≥5"},{text:"x>5",tag:"Salah mengubah bentuk"}] },
+    { text: "Hal pertama yang harus diperhatikan sebelum menyelesaikan pertidaksamaan logaritma adalah...", options: [{text:"Warna grafik",tag:"Tidak menentukan domain"},{text:"Syarat numerus positif",correct:true},{text:"Mengubah semua basis menjadi 10",tag:"Tidak wajib"},{text:"Mengalikan kedua ruas dengan basis",tag:"Bukan langkah umum"},{text:"Menghilangkan tanda log",tag:"Tidak boleh tanpa aturan"}] },
+  ],
+  E15: [
+    { text: "Domain fungsi $f(x)=\\log_2x$ adalah...", options: [{text:"x\\ge0",tag:"0 tidak termasuk domain logaritma"},{text:"x>0",correct:true},{text:"x<0",tag:"Salah tanda domain"},{text:"semua real",tag:"Logaritma hanya menerima numerus positif"},{text:"x\\neq1",tag:"Ini bukan syarat numerus"}] },
+    { text: "Range fungsi $f(x)=\\log_3x$ adalah...", options: [{text:"x>0",tag:"Itu domain, bukan range"},{text:"y>0",tag:"Hasil logaritma dapat negatif"},{text:"semua bilangan real",correct:true},{text:"y\\ge0",tag:"Logaritma dapat bernilai negatif"},{text:"y\\neq0",tag:"0 justru merupakan nilai fungsi saat x=1"}] },
+    { text: "Grafik $y=\\log_2x$ selalu melalui titik...", options: [{text:"(0,1)",tag:"x=0 tidak berada di domain"},{text:"(1,0)",correct:true},{text:"(2,0)",tag:"log₂2=1"},{text:"(0,0)",tag:"x=0 tidak terdefinisi"},{text:"(1,1)",tag:"log₂1=0"}] },
+    { text: "Jika $a>1$, grafik $y=\\log_ax$ bersifat...", options: [{text:"menurun",tag:"Berlaku untuk 0<a<1"},{text:"meningkat",correct:true},{text:"konstan",tag:"Salah karakteristik fungsi"},{text:"tidak memiliki domain",tag:"Domain x>0"},{text:"selalu positif",tag:"Nilai logaritma dapat negatif"}] },
+    { text: "Asimtot vertikal fungsi $y=\\log_ax$ adalah...", options: [{text:"x=0",correct:true},{text:"y=0",tag:"y=0 bukan asimtot vertikal"},{text:"x=1",tag:"Grafik justru melalui (1,0)"},{text:"y=1",tag:"Bukan asimtot vertikal"},{text:"x=a",tag:"Tidak berlaku umum"}] },
+    { text: "Fungsi invers dari $f(x)=\\log_2x$ adalah...", options: [{text:"y=2^x",correct:true},{text:"y=\\log_x2",tag:"Bukan bentuk fungsi invers"},{text:"y=x^2",tag:"Bukan invers logaritma"},{text:"y=2x",tag:"Fungsi linear"},{text:"y=\\frac{x}{2}",tag:"Bukan invers"}] },
+    { text: "Jika $f(x)=\\log_3x$, maka $f(9)=...", options: [{text:"1",tag:"log₃3=1"},{text:"2",correct:true},{text:"3",tag:"Menjawab basis"},{text:"6",tag:"Menjumlahkan 3 dan 9"},{text:"9",tag:"Menjawab numerus"}] },
+    { text: "Grafik $y=\\log_{1/2}x$ dibandingkan $y=\\log_2x$ adalah...", options: [{text:"keduanya sama persis",tag:"Basis berbeda menghasilkan orientasi berbeda"},{text:"yang berbasis 1/2 menurun",correct:true},{text:"yang berbasis 1/2 meningkat",tag:"Salah sifat basis 0<a<1"},{text:"keduanya parabola",tag:"Grafik logaritma bukan parabola"},{text:"yang berbasis 2 tidak punya domain",tag:"Keduanya memiliki domain x>0"}] },
+  ],
+  E16: [
+    { text: "$\\log_2 8+\\log_2 4=?", options: [{text:"3",tag:"Hanya mengambil logaritma pertama"},{text:"4",tag:"Salah menjumlahkan 3+2"},{text:"5",correct:true},{text:"6",tag:"Menjumlahkan numerus"},{text:"32",tag:"Mengalikan hasil secara keliru"}] },
+    { text: "$\\log_3 81-\\log_3 9=?", options: [{text:"1",tag:"Salah menghitung 4−2"},{text:"2",correct:true},{text:"3",tag:"Hanya mengambil logaritma pertama"},{text:"4",tag:"Hanya mengambil logaritma kedua"},{text:"9",tag:"Mengurangkan numerus"}] },
+    { text: "$\\log_2(8^2)=?$", options: [{text:"6",correct:true},{text:"16",tag:"Mengalikan 8 dengan 2"},{text:"9",tag:"Menambah 2 pada log₂8"},{text:"3",tag:"Mengabaikan pangkat"},{text:"4",tag:"Salah sifat pangkat"}] },
+    { text: "Jika $\\log_2 3=p$ dan $\\log_2 5=q$, maka $\\log_2 15=...", options: [{text:"p-q",tag:"Salah menggunakan sifat pembagian"},{text:"pq",tag:"Mengalikan nilai logaritma"},{text:"p+q",correct:true},{text:"p/q",tag:"Menggunakan sifat pembagian"},{text:"15p+q",tag:"Menggabungkan numerus secara langsung"}] },
+    { text: "$\\log_5\\left(\\frac{125}{25}\\right)=?$", options: [{text:"1",correct:true},{text:"2",tag:"Salah mengolah hasil bagi"},{text:"3",tag:"Hanya melihat pembilang"},{text:"5",tag:"Menjawab basis"},{text:"100",tag:"Mengurangkan numerus"}] },
+    { text: "Manakah yang TIDAK benar?", options: [{text:"$\\log_a(xy)=\\log_ax+\\log_ay$",tag:"Sifat perkalian benar"},{text:"$\\log_a(x/y)=\\log_ax-\\log_ay$",tag:"Sifat pembagian benar"},{text:"$\\log_a(x^n)=n\\log_ax$",tag:"Sifat pangkat benar"},{text:"$\\log_a(x+y)=\\log_ax+\\log_ay$",correct:true},{text:"$\\log_ax=\\frac{\\log_bx}{\\log_ba}$",tag:"Perubahan basis benar"}] },
+    { text: "Bentuk gabungan dari $\\log_3x+\\log_3(x+1)$ adalah...", options: [{text:"$\\log_3(2x+1)$",tag:"Menjumlahkan numerus secara langsung"},{text:"$\\log_3(x^2+x)$",correct:true},{text:"$\\log_3(x+1/x)$",tag:"Salah menggunakan sifat pembagian"},{text:"$2\\log_3x+1$",tag:"Salah mengembangkan logaritma"},{text:"$\\log_3x^2+1$",tag:"Salah penempatan pangkat"}] },
+    { text: "Bentuk sederhana dari $2\\log_5x-\\log_5y$ adalah...", options: [{text:"$\\log_5(2x-y)$",tag:"Mengoperasikan numerus secara langsung"},{text:"$\\log_5(x^2/y)$",correct:true},{text:"$\\log_5(x^2y)$",tag:"Salah tanda pengurangan"},{text:"$\\log_5(2x/y)$",tag:"Mengalikan numerus dengan koefisien"},{text:"$\\log_5(x/y^2)$",tag:"Pangkat diterapkan pada y, bukan x"}] },
   ],
 };
 const KB_ROWS = CONCEPT_ORDER.map((c) => ({
@@ -742,7 +829,7 @@ function AppInner() {
   const [latihanTimeSec, setLatihanTimeSec] = useState(0);
   const [latihanHintCount, setLatihanHintCount] = useState(0);
   const latihanQTimerRef = useRef(null);
-  const EXAM_LENGTH = 15;
+  const EXAM_LENGTH = 20;
 
   // ---------- Unggah Jawaban Esai (langsung ke Firestore, tanpa Google Form/Drive) ----------
   // Siswa memfoto jawaban tulis tangannya, foto dikompresi di browser (jadi file kecil ~100-250KB)
@@ -783,6 +870,16 @@ function AppInner() {
   const [guruProgressConcept, setGuruProgressConcept] = useState("E1");
   const [guruAnalyticsConcept, setGuruAnalyticsConcept] = useState(null); // konsep yg sedang di-drill-down di tab Analitik
   const [guruSelectedStudent, setGuruSelectedStudent] = useState(null);
+  const [guruAttendance, setGuruAttendance] = useState([]);
+  const [guruAttendanceLoading, setGuruAttendanceLoading] = useState(false);
+
+  // ---------- Presensi & pemantauan aktivitas siswa ----------
+  const [attendanceToday, setAttendanceToday] = useState(null);
+  const [attendanceLoading, setAttendanceLoading] = useState(false);
+  const activitySessionRef = useRef(null);
+  const activityTimerRef = useRef(null);
+  const activityVisibleRef = useRef(true);
+
 
   // ---------- Admin: Kode Akses Guru ----------
   const [accessCodes, setAccessCodes] = useState([]);
@@ -806,6 +903,102 @@ function AppInner() {
   const [ccQOptions, setCcQOptions] = useState(["", "", "", "", ""]);
   const [ccQCorrect, setCcQCorrect] = useState(0);
   const [ccQTags, setCcQTags] = useState(["", "", "", "", ""]);
+
+  function localDateKey(d = new Date()) {
+    const y = d.getFullYear(); const m = String(d.getMonth() + 1).padStart(2, "0"); const day = String(d.getDate()).padStart(2, "0");
+    return `${y}-${m}-${day}`;
+  }
+
+  async function loadStudentAttendance() {
+    if (!authUser || profile?.role !== "siswa") return;
+    setAttendanceLoading(true);
+    try {
+      const key = localDateKey();
+      const ref = doc(db, "attendance", `${authUser.uid}_${key}`);
+      const snap = await getDoc(ref);
+      setAttendanceToday(snap.exists() ? { id: snap.id, ...snap.data() } : null);
+    } catch (e) {
+      setAttendanceToday(null);
+    }
+    setAttendanceLoading(false);
+  }
+
+  async function markAttendance() {
+    if (!authUser || profile?.role !== "siswa" || attendanceToday?.checkInAt) return;
+    setAttendanceLoading(true);
+    try {
+      const now = new Date();
+      const dateKey = localDateKey(now);
+      const ref = doc(db, "attendance", `${authUser.uid}_${dateKey}`);
+      const data = {
+        uid: authUser.uid, name: profile.name || "Siswa", kelas: profile.kelas || "-",
+        sekolah: profile.sekolah || "-", dateKey, checkInAt: now.toISOString(),
+        checkInMs: now.getTime(), updatedAt: now.toISOString(),
+      };
+      await setDoc(ref, data, { merge: true });
+      setAttendanceToday({ id: ref.id, ...data });
+    } catch (e) {}
+    setAttendanceLoading(false);
+  }
+
+  async function loadGuruAttendance() {
+    if (!profile || profile.role !== "guru") return;
+    setGuruAttendanceLoading(true);
+    try {
+      const snap = await getDocs(collection(db, "attendance"));
+      let rows = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+      if (profile.sekolah) rows = rows.filter((r) => !r.sekolah || r.sekolah === profile.sekolah);
+      rows.sort((a, b) => String(b.checkInAt || "").localeCompare(String(a.checkInAt || "")));
+      setGuruAttendance(rows);
+    } catch (e) { setGuruAttendance([]); }
+    setGuruAttendanceLoading(false);
+  }
+
+  useEffect(() => {
+    if (mode === "app" && profile?.role === "siswa") loadStudentAttendance();
+    if (mode === "app" && profile?.role === "guru" && guruTab === "presensi") loadGuruAttendance();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mode, profile, guruTab]);
+
+  // Heartbeat aktivitas: hanya menghitung waktu ketika tab benar-benar terlihat.
+  useEffect(() => {
+    if (mode !== "app" || !authUser || profile?.role !== "siswa") return;
+    let mounted = true;
+    const sessionId = `${authUser.uid}_${Date.now()}`;
+    const sessionRef = doc(db, "activitySessions", sessionId);
+    activitySessionRef.current = { sessionRef, sessionId, startedAt: Date.now(), activeSec: 0 };
+    let firstPersist = true;
+    const persist = async () => {
+      const s = activitySessionRef.current;
+      if (!mounted || !s) return;
+      const now = Date.now();
+      if (!firstPersist && activityVisibleRef.current) s.activeSec += 30;
+      firstPersist = false;
+      try {
+        await setDoc(sessionRef, {
+          uid: authUser.uid, name: profile.name || "Siswa", kelas: profile.kelas || "-", sekolah: profile.sekolah || "-",
+          startedAt: new Date(s.startedAt).toISOString(), lastActiveAt: new Date(now).toISOString(),
+          activeSeconds: s.activeSec, updatedAt: new Date(now).toISOString()
+        }, { merge: true });
+        const attRef = doc(db, "attendance", `${authUser.uid}_${localDateKey()}`);
+        const attSnap = await getDoc(attRef);
+        if (attSnap.exists()) {
+          await setDoc(attRef, { activeSeconds: s.activeSec, lastActiveAt: new Date(now).toISOString(), updatedAt: new Date(now).toISOString() }, { merge: true });
+        }
+      } catch (e) {}
+    };
+    const onVisibility = () => { activityVisibleRef.current = document.visibilityState === "visible"; };
+    activityVisibleRef.current = document.visibilityState === "visible";
+    document.addEventListener("visibilitychange", onVisibility);
+    activityTimerRef.current = setInterval(persist, 30000);
+    persist();
+    return () => {
+      mounted = false;
+      if (activityTimerRef.current) clearInterval(activityTimerRef.current);
+      document.removeEventListener("visibilitychange", onVisibility);
+      activitySessionRef.current = null;
+    };
+  }, [mode, authUser, profile]);
 
   useEffect(() => {
     const t = setTimeout(() => setAuthTimedOut(true), 12000);
@@ -889,7 +1082,7 @@ function AppInner() {
         // Hitung streak harian: lanjut kalau aktif kemarin, reset kalau lewat 1 hari, tetap kalau sudah aktif hari ini
         if (!streakCheckedRef.current) {
           streakCheckedRef.current = true;
-          const today = new Date().toISOString().slice(0, 10);
+          const today = localDateKey();
           if (loadedLastActive === today) {
             loadedStreak = loadedStreak || 1;
           } else {
@@ -2449,7 +2642,8 @@ function AppInner() {
                 <button className={"sidebar-navbtn" + (screen === "leaderboard" ? " active" : "")} onClick={() => setScreen("leaderboard")}><Trophy size={17} />Peringkat</button>
                 <button className={"sidebar-navbtn" + (screen === "badges" ? " active" : "")} onClick={() => setScreen("badges")}><Award size={17} />Koleksi Badge</button>
                 <button className={"sidebar-navbtn" + (screen === "refleksi" ? " active" : "")} onClick={() => setScreen("refleksi")}><MessageCircle size={17} />Refleksi</button>
-                <button className={"sidebar-navbtn" + (screen === "profil" ? " active" : "")} onClick={() => setScreen("profil")}><User size={17} />Profil</button>
+                <button className={"sidebar-navbtn" + (screen === "presensi" ? " active" : "")} onClick={() => { loadStudentAttendance(); setScreen("presensi"); }}><CheckCircle2 size={17} />Presensi</button>
+              <button className={"sidebar-navbtn" + (screen === "profil" ? " active" : "")} onClick={() => setScreen("profil")}><User size={17} />Profil</button>
               </nav>
             )}
 
@@ -2466,7 +2660,8 @@ function AppInner() {
                 {profile.isAdmin && (
                   <button className={"sidebar-navbtn" + (guruTab === "kodeAkses" && screen !== "profil" ? " active" : "")} onClick={() => { setGuruTab("kodeAkses"); setScreen("dashboard"); }}><LockIcon size={17} />Kode Akses</button>
                 )}
-                <button className={"sidebar-navbtn" + (screen === "profil" ? " active" : "")} onClick={() => { setScreen("profil"); startEditProfil(); }}><User size={17} />Profil</button>
+                <button className={"sidebar-navbtn" + (guruTab === "presensi" && screen !== "profil" ? " active" : "")} onClick={() => { setGuruTab("presensi"); setScreen("dashboard"); loadGuruAttendance(); }}><CheckCircle2 size={17} />Presensi</button>
+              <button className={"sidebar-navbtn" + (screen === "profil" ? " active" : "")} onClick={() => { setScreen("profil"); startEditProfil(); }}><User size={17} />Profil</button>
               </nav>
             )}
 
@@ -2587,6 +2782,30 @@ function AppInner() {
                           : "Saat ini siswa sedang fokus pada konsep: " + CONCEPTS[activeConcept].name + " (" + EFFECTIVE_MATERI[activeConcept].penjelasan + ").")
                       }
                     />
+                  </div>
+                )}
+
+                {screen === "presensi" && (
+                  <div className="card" style={{ maxWidth: 720 }}>
+                    <div className="tag-eyebrow">Presensi Pembelajaran</div>
+                    <h2 className="disp" style={{ fontSize: 20, marginBottom: 6 }}>Kehadiran Hari Ini</h2>
+                    <p style={{ fontSize: 12.5, color: "var(--muted)", marginBottom: 18 }}>Presensi tercatat otomatis bersama tanggal dan waktu saat kamu menekan tombol hadir.</p>
+                    <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap", marginBottom: 18 }}>
+                      <div style={{ flex: 1, minWidth: 220, padding: 16, borderRadius: 14, background: attendanceToday?.checkInAt ? "var(--teal-light)" : "#f7f7f8", border: "1px solid var(--line)" }}>
+                        <div style={{ fontSize: 11, color: "var(--muted)", marginBottom: 4 }}>Status</div>
+                        <div style={{ fontSize: 18, fontWeight: 800, color: attendanceToday?.checkInAt ? "#0F7A56" : "var(--text)" }}>{attendanceToday?.checkInAt ? "✓ Hadir" : "Belum presensi"}</div>
+                      </div>
+                      <div style={{ flex: 1, minWidth: 220, padding: 16, borderRadius: 14, background: "#f7f7f8", border: "1px solid var(--line)" }}>
+                        <div style={{ fontSize: 11, color: "var(--muted)", marginBottom: 4 }}>Jam presensi</div>
+                        <div style={{ fontSize: 18, fontWeight: 800 }}>{attendanceToday?.checkInAt ? new Date(attendanceToday.checkInAt).toLocaleTimeString("id-ID") : "—"}</div>
+                      </div>
+                    </div>
+                    {!attendanceToday?.checkInAt && (
+                      <button className="btn-primary" onClick={markAttendance} disabled={attendanceLoading} style={{ width: "100%", justifyContent: "center" }}>
+                        {attendanceLoading ? <Loader2 size={15} className="spin" /> : <CheckCircle2 size={16} />} Hadir Sekarang
+                      </button>
+                    )}
+                    {attendanceToday?.checkInAt && <div className="misc-item">Presensi kamu sudah tersimpan. Silakan lanjutkan pembelajaran seperti biasa.</div>}
                   </div>
                 )}
 
@@ -2759,7 +2978,7 @@ function AppInner() {
                     <div className="tag-eyebrow">Ujian</div>
                     <h2 className="disp" style={{ fontSize: 19, marginBottom: 4 }}>Uji Kemampuanmu</h2>
                     <p style={{ fontSize: 12.5, color: "var(--muted)", marginBottom: 16 }}>
-                      {EXAM_LENGTH} soal pilihan ganda diambil acak dari seluruh sub-materi eksponen. Tanpa hint atau petunjuk — murni untuk mengetes kemampuanmu. Hasil lengkap muncul di akhir dan tidak memengaruhi progress belajar di menu Latihan.
+                      {EXAM_LENGTH} soal pilihan ganda diambil acak dari seluruh sub-materi eksponen & logaritma. Tanpa hint atau petunjuk — murni untuk mengetes kemampuanmu. Hasil lengkap muncul di akhir dan tidak memengaruhi progress belajar di menu Latihan.
                     </p>
                     <button className="btn-primary" onClick={generateExam}><ClipboardList size={15} /> Mulai Ujian ({EXAM_LENGTH} Soal)</button>
 
@@ -3207,6 +3426,50 @@ function AppInner() {
                     <button className="btn-ghost" onClick={loadGuruData} disabled={guruLoading}>{guruLoading ? <Loader2 size={14} className="spin" /> : <RefreshCw size={14} />} Muat ulang</button>
                   </div>
                 </div>
+
+                {guruTab === "presensi" && (
+                  <div className="card">
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap", marginBottom: 16 }}>
+                      <div>
+                        <div className="tag-eyebrow">Monitoring Kehadiran & Aktivitas</div>
+                        <h2 className="disp" style={{ fontSize: 20, marginBottom: 4 }}>Presensi Siswa</h2>
+                        <p style={{ fontSize: 12.5, color: "var(--muted)" }}>Tanggal dan waktu presensi serta estimasi waktu aktif siswa di web.</p>
+                      </div>
+                      <button className="btn-ghost" onClick={loadGuruAttendance} disabled={guruAttendanceLoading}>{guruAttendanceLoading ? <Loader2 size={14} className="spin" /> : <RefreshCw size={14} />} Muat ulang</button>
+                    </div>
+                    {(() => {
+                      const today = new Date().toISOString().slice(0, 10);
+                      const rows = guruAttendance.filter((r) => r.dateKey === today && (guruKelasFilter === "semua" || r.kelas === guruKelasFilter));
+                      const present = rows.length;
+                      const avgActive = rows.length ? Math.round(rows.reduce((a, r) => a + (r.activeSeconds || 0), 0) / rows.length) : 0;
+                      const fmt = (sec) => { const m = Math.floor(sec / 60); const ss = sec % 60; return `${m} m ${ss} d`; };
+                      return (
+                        <>
+                          <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginBottom: 18 }}>
+                            <div className="card" style={{ flex: 1, minWidth: 150 }}><div style={{ fontSize: 11, color: "var(--muted)" }}>Hadir hari ini</div><div className="disp" style={{ fontSize: 24 }}>{present}</div></div>
+                            <div className="card" style={{ flex: 1, minWidth: 150 }}><div style={{ fontSize: 11, color: "var(--muted)" }}>Belum terdata</div><div className="disp" style={{ fontSize: 24 }}>{Math.max(0, guruFilteredStudents.length - present)}</div></div>
+                            <div className="card" style={{ flex: 1, minWidth: 150 }}><div style={{ fontSize: 11, color: "var(--muted)" }}>Rata-rata aktif</div><div className="disp" style={{ fontSize: 24 }}>{fmt(avgActive)}</div></div>
+                          </div>
+                          {rows.length === 0 ? <p style={{ fontSize: 13.5, color: "var(--muted)" }}>Belum ada data presensi hari ini.</p> : (
+                            <div style={{ overflowX: "auto" }}>
+                              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12.5 }}>
+                                <thead><tr>{["Siswa","Kelas","Jam Presensi","Mulai Akses","Aktif","Terakhir Aktif"].map(h => <th key={h} style={{ textAlign: "left", padding: "9px 8px", borderBottom: "1.5px solid var(--line)", color: "var(--muted)" }}>{h}</th>)}</tr></thead>
+                                <tbody>{rows.map((r) => <tr key={r.id}>
+                                  <td style={{ padding: "10px 8px", fontWeight: 700 }}>{r.name || "-"}</td>
+                                  <td style={{ padding: "10px 8px" }}>{r.kelas || "-"}</td>
+                                  <td style={{ padding: "10px 8px" }}>{r.checkInAt ? new Date(r.checkInAt).toLocaleTimeString("id-ID") : "-"}</td>
+                                  <td style={{ padding: "10px 8px" }}>{r.startedAt ? new Date(r.startedAt).toLocaleTimeString("id-ID") : "-"}</td>
+                                  <td style={{ padding: "10px 8px", fontWeight: 700 }}>{fmt(r.activeSeconds || 0)}</td>
+                                  <td style={{ padding: "10px 8px" }}>{r.lastActiveAt ? new Date(r.lastActiveAt).toLocaleTimeString("id-ID") : "-"}</td>
+                                </tr>)}</tbody>
+                              </table>
+                            </div>
+                          )}
+                        </>
+                      );
+                    })()}
+                  </div>
+                )}
 
                 {guruTab === "beranda" && (
                   <div className="card">
