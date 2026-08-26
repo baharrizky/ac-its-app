@@ -9,7 +9,7 @@ import {
   GraduationCap, LayoutDashboard, BookOpen, PenLine, TrendingUp, User,
   Lightbulb, CheckCircle2, XCircle, AlertTriangle, ArrowRight, ArrowLeft, LogOut, Database, Users,
   Mail, Lock, Loader2, RefreshCw, MessageCircle, Sparkles, ClipboardList, Lock as LockIcon,
-  ZoomIn, ZoomOut, Send, Clock, Trophy, Award, ListChecks, KeyRound, FileText,
+  ZoomIn, ZoomOut, Send, Clock, Trophy, Award, ListChecks, KeyRound, FileText, Menu, X,
 } from "lucide-react";
 import { auth, db } from "./firebase";
 import {
@@ -854,6 +854,7 @@ function AppInner() {
 
   // ---------- Navigasi ----------
   const [screen, setScreen] = useState("dashboard"); // dashboard | materi | latihan | diagnosis | hint | ujian | ujianSoal | ujianHasil | progress | profil | komikList | komikChapter
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [activeConcept, setActiveConcept] = useState("E1");
   const [consecWrong, setConsecWrong] = useState(0);
   const [hintTier, setHintTier] = useState(0);
@@ -1519,6 +1520,12 @@ function AppInner() {
       if (document.fullscreenElement && document.exitFullscreen) document.exitFullscreen().catch(() => {});
     } catch (e) {}
     setScreen("ujianHasil");
+  }
+
+  function goMenu(nextScreen, extra = null) {
+    if (extra) extra();
+    setScreen(nextScreen);
+    setMobileMenuOpen(false);
   }
 
   async function logout() {
@@ -2674,6 +2681,63 @@ function AppInner() {
               <button className="btn-ghost" style={{ padding: 7 }} onClick={logout} title="Keluar"><LogOut size={13} /></button>
             </div>
           </aside>
+
+          <header className="mobile-appbar">
+            <button className="mobile-menu-btn" onClick={() => setMobileMenuOpen(true)} aria-label="Buka menu">
+              <Menu size={22} />
+            </button>
+            <div className="mobile-brand"><GraduationCap size={19} /> AC-ITS</div>
+            <button className="mobile-avatar-btn" onClick={() => { setScreen("profil"); setMobileMenuOpen(false); if (profile.role === "guru") startEditProfil(); }} aria-label="Profil">
+              <div className="avatar" style={{ background: AVATAR_GRADIENTS[profile.avatarColor || 0] }}>{(profile.name || "?").trim().charAt(0).toUpperCase()}</div>
+            </button>
+          </header>
+
+          {mobileMenuOpen && (
+            <div className="mobile-menu-layer">
+              <button className="mobile-menu-backdrop" aria-label="Tutup menu" onClick={() => setMobileMenuOpen(false)} />
+              <aside className="mobile-drawer">
+                <div className="mobile-drawer-head">
+                  <div className="mobile-brand"><GraduationCap size={19} /> AC-ITS</div>
+                  <button className="mobile-close-btn" onClick={() => setMobileMenuOpen(false)} aria-label="Tutup menu"><X size={21} /></button>
+                </div>
+                <div className="mobile-user-card">
+                  <div className="avatar" style={{ background: AVATAR_GRADIENTS[profile.avatarColor || 0] }}>{(profile.name || "?").trim().charAt(0).toUpperCase()}</div>
+                  <div style={{ minWidth: 0 }}>
+                    <div style={{ fontWeight: 700, fontSize: 13 }}>{profile.name || "Pengguna"}</div>
+                    <div style={{ fontSize: 11, color: "var(--muted)" }}>{profile.role === "siswa" ? "Siswa" : "Guru"}</div>
+                  </div>
+                </div>
+                <nav className="mobile-menu-nav">
+                  {profile.role === "siswa" ? (<>
+                    <button className={"mobile-menu-item" + (screen === "dashboard" ? " active" : "")} onClick={() => goMenu("dashboard")}><LayoutDashboard size={18} />Dashboard</button>
+                    <button className={"mobile-menu-item" + (screen === "tutorAI" ? " active" : "")} onClick={() => { setTutorFocusConcept(null); goMenu("tutorAI"); }}><MessageCircle size={18} />Tutor AI</button>
+                    <button className={"mobile-menu-item" + ((screen === "materiList" || screen === "materi") ? " active" : "")} onClick={() => goMenu("materiList")}><BookOpen size={18} />Materi</button>
+                    <button className={"mobile-menu-item" + ((screen === "latihanList" || screen === "latihan" || screen === "diagnosis" || screen === "hint") ? " active" : "")} onClick={() => goMenu("latihanList")}><PenLine size={18} />Latihan</button>
+                    <button className={"mobile-menu-item" + ((screen === "ujian" || screen === "ujianSoal" || screen === "ujianEsai" || screen === "ujianHasil") ? " active" : "")} onClick={() => goMenu("ujian")}><ClipboardList size={18} />Ujian</button>
+                    <button className={"mobile-menu-item" + (screen === "progress" ? " active" : "")} onClick={() => goMenu("progress")}><TrendingUp size={18} />Progress</button>
+                    <button className={"mobile-menu-item" + (screen === "leaderboard" ? " active" : "")} onClick={() => goMenu("leaderboard")}><Trophy size={18} />Peringkat</button>
+                    <button className={"mobile-menu-item" + (screen === "badges" ? " active" : "")} onClick={() => goMenu("badges")}><Award size={18} />Badge</button>
+                    <button className={"mobile-menu-item" + (screen === "refleksi" ? " active" : "")} onClick={() => goMenu("refleksi")}><MessageCircle size={18} />Refleksi</button>
+                    <button className={"mobile-menu-item" + (screen === "presensi" ? " active" : "")} onClick={() => { loadStudentAttendance(); goMenu("presensi"); }}><CheckCircle2 size={18} />Presensi</button>
+                    <button className={"mobile-menu-item" + (screen === "profil" ? " active" : "")} onClick={() => goMenu("profil")}><User size={18} />Profil</button>
+                  </>) : (<>
+                    <button className={"mobile-menu-item" + (guruTab === "beranda" && screen !== "profil" ? " active" : "")} onClick={() => { setGuruTab("beranda"); goMenu("dashboard"); }}><LayoutDashboard size={18} />Beranda</button>
+                    <button className={"mobile-menu-item" + (guruTab === "analitik" && screen !== "profil" ? " active" : "")} onClick={() => { setGuruTab("analitik"); goMenu("dashboard"); }}><TrendingUp size={18} />Analitik</button>
+                    <button className={"mobile-menu-item" + (guruTab === "progressMateri" && screen !== "profil" ? " active" : "")} onClick={() => { setGuruTab("progressMateri"); goMenu("dashboard"); }}><ListChecks size={18} />Progress per Soal</button>
+                    <button className={"mobile-menu-item" + (guruTab === "peringkat" && screen !== "profil" ? " active" : "")} onClick={() => { setGuruTab("peringkat"); goMenu("dashboard"); }}><Trophy size={18} />Peringkat</button>
+                    <button className={"mobile-menu-item" + (guruTab === "ujian" && screen !== "profil" ? " active" : "")} onClick={() => { setGuruTab("ujian"); setGuruSelectedAttempt(null); goMenu("dashboard"); }}><Clock size={18} />Jawaban &amp; Waktu Ujian</button>
+                    <button className={"mobile-menu-item" + (guruTab === "materi" && screen !== "profil" ? " active" : "")} onClick={() => { setGuruTab("materi"); goMenu("dashboard"); }}><Database size={18} />Knowledge Base</button>
+                    <button className={"mobile-menu-item" + (guruTab === "kelolaKonten" && screen !== "profil" ? " active" : "")} onClick={() => { setGuruTab("kelolaKonten"); goMenu("dashboard"); }}><PenLine size={18} />Kelola Materi &amp; Soal</button>
+                    <button className={"mobile-menu-item" + (guruTab === "refleksi" && screen !== "profil" ? " active" : "")} onClick={() => { setGuruTab("refleksi"); goMenu("dashboard"); }}><MessageCircle size={18} />Refleksi Siswa</button>
+                    {profile.isAdmin && <button className={"mobile-menu-item" + (guruTab === "kodeAkses" && screen !== "profil" ? " active" : "")} onClick={() => { setGuruTab("kodeAkses"); goMenu("dashboard"); }}><LockIcon size={18} />Kode Akses</button>}
+                    <button className={"mobile-menu-item" + (guruTab === "presensi" && screen !== "profil" ? " active" : "")} onClick={() => { setGuruTab("presensi"); loadGuruAttendance(); goMenu("dashboard"); }}><CheckCircle2 size={18} />Presensi</button>
+                    <button className={"mobile-menu-item" + (screen === "profil" ? " active" : "")} onClick={() => { startEditProfil(); goMenu("profil"); }}><User size={18} />Profil</button>
+                  </>)}
+                </nav>
+                <button className="mobile-logout" onClick={logout}><LogOut size={18} />Keluar</button>
+              </aside>
+            </div>
+          )}
 
           {profile.role === "siswa" && (
             <nav className="floating-nav" style={(examLocked || latihanLocked) ? { pointerEvents: "none", opacity: 0.45 } : undefined}>
@@ -4030,19 +4094,42 @@ function GlobalStyle() {
         .streak-chip { display:inline-flex; align-items:center; gap:5px; background:var(--amber-light); color:#9A6414; padding:5px 12px; border-radius:999px; font-size:12.5px; font-weight:700; }
         .xp-chip { display:inline-flex; align-items:center; gap:5px; background:var(--plum-light); color:var(--plum); padding:5px 12px; border-radius:999px; font-size:12.5px; font-weight:700; }
         .floating-nav { display:none; }
+        .mobile-appbar, .mobile-menu-layer { display:none; }
         .avatar-btn { cursor:pointer; border:2px solid transparent; }
         .avatar-btn.picked { border-color:var(--brand); }
         @media (max-width:680px) {
-          .app-shell { flex-direction:column; align-items:stretch; min-height:auto; }
+          .app-shell { flex-direction:column; align-items:stretch; min-height:100vh; }
           .sidebar { display:none; }
-          .app-main-scroll { padding-bottom:86px; }
-          .floating-nav {
-            display:flex; position:fixed; left:50%; bottom:16px; transform:translateX(-50%);
-            background:white; border-radius:999px; box-shadow:0 8px 28px rgba(90,70,190,0.25);
-            padding:8px 10px; gap:2px; z-index:50; max-width:94vw; overflow-x:auto;
+          .app-main-scroll { padding-top:58px; padding-bottom:20px; }
+          .floating-nav { display:none !important; }
+          .mobile-appbar {
+            display:flex; position:fixed; top:0; left:0; right:0; height:58px; z-index:40;
+            align-items:center; justify-content:space-between; padding:0 14px;
+            background:white; border-bottom:1px solid var(--line); box-shadow:0 2px 10px rgba(30,27,51,0.06);
           }
-          .floating-nav .sidebar-navbtn { flex-direction:column; gap:2px; font-size:9.5px; padding:8px 9px; white-space:nowrap; border-radius:14px; }
+          .mobile-brand { display:flex; align-items:center; gap:7px; color:var(--brand-dark); font-family:'Baloo 2',sans-serif; font-weight:800; font-size:17px; }
+          .mobile-menu-btn, .mobile-close-btn, .mobile-avatar-btn { border:none; background:none; color:var(--ink); cursor:pointer; padding:7px; border-radius:10px; display:flex; align-items:center; justify-content:center; }
+          .mobile-menu-btn:hover, .mobile-close-btn:hover { background:var(--paper-2); }
+          .mobile-avatar-btn { padding:2px; }
+          .mobile-avatar-btn .avatar { width:34px; height:34px; font-size:13px; }
+          .mobile-menu-layer { display:block; position:fixed; inset:0; z-index:100; }
+          .mobile-menu-backdrop { position:absolute; inset:0; width:100%; height:100%; border:none; background:rgba(30,27,51,0.35); cursor:pointer; }
+          .mobile-drawer {
+            position:absolute; top:0; left:0; bottom:0; width:min(82vw,320px); background:white;
+            box-shadow:12px 0 35px rgba(30,27,51,0.18); padding:16px 12px; display:flex; flex-direction:column;
+            animation:drawerIn .18s ease-out; overflow-y:auto;
+          }
+          .mobile-drawer-head { display:flex; align-items:center; justify-content:space-between; padding:0 4px 14px; border-bottom:1px solid var(--line); }
+          .mobile-user-card { display:flex; align-items:center; gap:10px; margin:14px 4px 10px; padding:10px; background:var(--paper-2); border-radius:14px; }
+          .mobile-user-card .avatar { width:38px; height:38px; font-size:14px; flex-shrink:0; }
+          .mobile-menu-nav { display:flex; flex-direction:column; gap:3px; }
+          .mobile-menu-item { display:flex; align-items:center; gap:12px; width:100%; padding:11px 12px; border:none; background:none; color:var(--muted); border-radius:11px; font-size:13.5px; font-weight:600; text-align:left; cursor:pointer; }
+          .mobile-menu-item.active { background:var(--brand-light); color:var(--brand-dark); }
+          .mobile-menu-item:active { transform:scale(.99); }
+          .mobile-logout { display:flex; align-items:center; justify-content:center; gap:8px; width:100%; margin-top:auto; padding:11px 12px; border:1px solid var(--line); background:white; color:var(--rose); border-radius:11px; font-size:13px; font-weight:700; cursor:pointer; }
+          .body-area { padding:14px; }
         }
+        @keyframes drawerIn { from { transform:translateX(-12px); opacity:.7; } to { transform:translateX(0); opacity:1; } }
         .spin { animation: spin 0.8s linear infinite; }
         @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
       `}</style>
