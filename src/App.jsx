@@ -14,7 +14,7 @@ import {
 import { auth, db } from "./firebase";
 import {
   onAuthStateChanged, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut,
-  sendPasswordResetEmail,
+  sendPasswordResetEmail, EmailAuthProvider, reauthenticateWithCredential, updatePassword,
 } from "firebase/auth";
 import {
   doc, getDoc, setDoc, updateDoc, collection, query, where, getDocs, arrayUnion, serverTimestamp,
@@ -810,6 +810,13 @@ function AppInner() {
   const [editKelasAjar, setEditKelasAjar] = useState("");
   const [editAvatarColor, setEditAvatarColor] = useState(0);
   const [savingProfil, setSavingProfil] = useState(false);
+  const [changePasswordOpen, setChangePasswordOpen] = useState(false);
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [changingPassword, setChangingPassword] = useState(false);
+  const [passwordMessage, setPasswordMessage] = useState("");
+  const [passwordError, setPasswordError] = useState("");
 
   // ---------- Ujian: tes 15 soal acak, murni mengukur kemampuan (tidak memengaruhi mastery/attempts) ----------
   const [examQuestions, setExamQuestions] = useState([]);
@@ -1543,6 +1550,53 @@ function AppInner() {
     setEditKelasAjar((profile.kelasAjar || []).join(", "));
     setEditAvatarColor(profile.avatarColor || 0);
     setEditingProfil(true);
+  }
+
+  async function changeAccountPassword() {
+    setPasswordError("");
+    setPasswordMessage("");
+    if (!authUser?.email) {
+      setPasswordError("Email akun tidak tersedia.");
+      return;
+    }
+    if (!currentPassword) {
+      setPasswordError("Masukkan kata sandi saat ini.");
+      return;
+    }
+    if (newPassword.length < 6) {
+      setPasswordError("Kata sandi baru minimal 6 karakter.");
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      setPasswordError("Konfirmasi kata sandi baru tidak sama.");
+      return;
+    }
+    if (currentPassword === newPassword) {
+      setPasswordError("Kata sandi baru harus berbeda dari kata sandi saat ini.");
+      return;
+    }
+    setChangingPassword(true);
+    try {
+      const credential = EmailAuthProvider.credential(authUser.email, currentPassword);
+      await reauthenticateWithCredential(authUser, credential);
+      await updatePassword(authUser, newPassword);
+      setCurrentPassword("");
+      setNewPassword("");
+      setConfirmPassword("");
+      setPasswordMessage("Kata sandi berhasil diubah. Gunakan kata sandi baru saat login berikutnya.");
+      setChangePasswordOpen(false);
+    } catch (e) {
+      const map = {
+        "auth/invalid-credential": "Kata sandi saat ini salah.",
+        "auth/wrong-password": "Kata sandi saat ini salah.",
+        "auth/too-many-requests": "Terlalu banyak percobaan. Coba lagi beberapa saat lagi.",
+        "auth/weak-password": "Kata sandi baru terlalu lemah. Gunakan minimal 6 karakter.",
+        "auth/requires-recent-login": "Sesi login sudah terlalu lama. Silakan keluar lalu login kembali sebelum mengganti kata sandi.",
+      };
+      setPasswordError(map[e.code] || "Gagal mengubah kata sandi. Coba lagi.");
+    } finally {
+      setChangingPassword(false);
+    }
   }
 
   async function saveProfil() {
