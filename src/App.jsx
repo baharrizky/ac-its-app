@@ -2717,7 +2717,7 @@ function AppInner() {
       )}
 
       {mode === "app" && profile && (
-        <div className="app-shell">
+        <div className="app-shell notranslate" translate="no">
           <aside className="sidebar" style={(examLocked || latihanLocked) ? { pointerEvents: "none", opacity: 0.45 } : undefined}>
             <div className="sidebar-brand brand"><GraduationCap size={20} /> AC-ITS</div>
 
