@@ -442,6 +442,54 @@ function formatDuration(sec) {
   return `${m} menit ${r} detik`;
 }
 
+// ---------------- Helper: Fullscreen API lintas-browser (Safari/iOS/Firefox lama pakai prefix) ----------------
+function getFullscreenElement() {
+  if (typeof document === "undefined") return null;
+  return (
+    document.fullscreenElement ||
+    document.webkitFullscreenElement ||
+    document.mozFullScreenElement ||
+    document.msFullscreenElement ||
+    null
+  );
+}
+function requestFullscreenCompat(el) {
+  if (!el) return Promise.resolve();
+  try {
+    const fn =
+      el.requestFullscreen ||
+      el.webkitRequestFullscreen ||
+      el.webkitRequestFullScreen ||
+      el.mozRequestFullScreen ||
+      el.msRequestFullscreen;
+    if (!fn) return Promise.resolve(); // browser/OS tidak mendukung (mis. Safari iOS) — gagal senyap, jangan bikin app crash
+    const result = fn.call(el);
+    return result && typeof result.catch === "function" ? result.catch(() => {}) : Promise.resolve();
+  } catch (e) {
+    return Promise.resolve();
+  }
+}
+function exitFullscreenCompat() {
+  try {
+    const fn =
+      document.exitFullscreen ||
+      document.webkitExitFullscreen ||
+      document.webkitCancelFullScreen ||
+      document.mozCancelFullScreen ||
+      document.msExitFullscreen;
+    if (!fn || !getFullscreenElement()) return Promise.resolve();
+    const result = fn.call(document);
+    return result && typeof result.catch === "function" ? result.catch(() => {}) : Promise.resolve();
+  } catch (e) {
+    return Promise.resolve();
+  }
+}
+const FULLSCREEN_CHANGE_EVENTS = ["fullscreenchange", "webkitfullscreenchange", "mozfullscreenchange", "MSFullscreenChange"];
+function addFullscreenChangeListener(handler) {
+  FULLSCREEN_CHANGE_EVENTS.forEach((ev) => document.addEventListener(ev, handler));
+  return () => FULLSCREEN_CHANGE_EVENTS.forEach((ev) => document.removeEventListener(ev, handler));
+}
+
 // ---------------- Komponen: MathText — merender notasi LaTeX asli pakai KaTeX ----------------
 function sanitizeMathTex(tex) {
   return String(tex || '')
@@ -1209,7 +1257,7 @@ function AppInner() {
     };
     const handleBlur = () => { showWarning(); };
     const handleFullscreenChange = () => {
-      if (!document.fullscreenElement) { markViolation(); showWarning(); }
+      if (!getFullscreenElement()) { markViolation(); showWarning(); }
     };
     const handleContextMenu = (e) => e.preventDefault();
     const handleKeyDown = (e) => {
@@ -1233,7 +1281,7 @@ function AppInner() {
     window.addEventListener("beforeunload", handleBeforeUnload);
     document.addEventListener("visibilitychange", handleVisibility);
     window.addEventListener("blur", handleBlur);
-    document.addEventListener("fullscreenchange", handleFullscreenChange);
+    const removeFullscreenListener = addFullscreenChangeListener(handleFullscreenChange);
     document.addEventListener("contextmenu", handleContextMenu);
     document.addEventListener("keydown", handleKeyDown);
     window.addEventListener("popstate", handlePopState);
@@ -1242,7 +1290,7 @@ function AppInner() {
       window.removeEventListener("beforeunload", handleBeforeUnload);
       document.removeEventListener("visibilitychange", handleVisibility);
       window.removeEventListener("blur", handleBlur);
-      document.removeEventListener("fullscreenchange", handleFullscreenChange);
+      removeFullscreenListener();
       document.removeEventListener("contextmenu", handleContextMenu);
       document.removeEventListener("keydown", handleKeyDown);
       window.removeEventListener("popstate", handlePopState);
@@ -1251,18 +1299,12 @@ function AppInner() {
 
   function resumeExamAfterWarning() {
     setExamLeaveWarning(false);
-    try {
-      const el = document.documentElement;
-      if (!document.fullscreenElement && el.requestFullscreen) el.requestFullscreen().catch(() => {});
-    } catch (e) {}
+    if (!getFullscreenElement()) requestFullscreenCompat(document.documentElement);
   }
 
   function resumeLatihanAfterWarning() {
     setLatihanLeaveWarning(false);
-    try {
-      const el = document.documentElement;
-      if (!document.fullscreenElement && el.requestFullscreen) el.requestFullscreen().catch(() => {});
-    } catch (e) {}
+    if (!getFullscreenElement()) requestFullscreenCompat(document.documentElement);
   }
 
   const statuses = useMemo(() => {
@@ -1295,10 +1337,7 @@ function AppInner() {
     if (pool.length > 0 && doneCount < pool.length) {
       setLatihanLocked(true);
       setLatihanLeaveWarning(false);
-      try {
-        const el = document.documentElement;
-        if (el.requestFullscreen) el.requestFullscreen().catch(() => {});
-      } catch (e) {}
+      requestFullscreenCompat(document.documentElement);
     }
   }
 
@@ -1315,10 +1354,7 @@ function AppInner() {
     if (pool.length > 0 && doneCount < pool.length) {
       setLatihanLocked(true);
       setLatihanLeaveWarning(false);
-      try {
-        const el = document.documentElement;
-        if (el.requestFullscreen) el.requestFullscreen().catch(() => {});
-      } catch (e) {}
+      requestFullscreenCompat(document.documentElement);
     }
   }
 
@@ -1410,9 +1446,7 @@ function AppInner() {
       // seluruh soal pada konsep ini sudah terjawab & terkunci — lepaskan kunci sesi latihan
       setLatihanLocked(false);
       setLatihanLeaveWarning(false);
-      try {
-        if (document.fullscreenElement && document.exitFullscreen) document.exitFullscreen().catch(() => {});
-      } catch (e) {}
+      exitFullscreenCompat();
     }
   }
 
@@ -1474,10 +1508,7 @@ function AppInner() {
     setExamLocked(true);
     setScreen("ujianSoal");
     // Minta mode layar penuh (butuh gestur pengguna, klik tombol "Mulai Ujian" ini memenuhi syarat itu)
-    try {
-      const el = document.documentElement;
-      if (el.requestFullscreen) el.requestFullscreen().catch(() => {});
-    } catch (e) {}
+    requestFullscreenCompat(document.documentElement);
   }
 
   function selectExamAnswer(i) {
@@ -1523,9 +1554,7 @@ function AppInner() {
     setExamLocked(false);
     setExamLeaveWarning(false);
     setExamStartTime(null);
-    try {
-      if (document.fullscreenElement && document.exitFullscreen) document.exitFullscreen().catch(() => {});
-    } catch (e) {}
+    exitFullscreenCompat();
     setScreen("ujianHasil");
   }
 
