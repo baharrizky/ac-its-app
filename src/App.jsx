@@ -1249,11 +1249,14 @@ let rows = snap.docs.map((d) => ({
   }, [screen, activeConcept, guruTab, authUser, profile]);
 
   // ---------- Kunci laman ujian & latihan: mencegah siswa keluar/berpindah selama pengerjaan berlangsung ----------
+  // Termasuk juga: anti-copy teks soal & percobaan meredam screenshot (sebatas yang bisa dilakukan lewat JS di browser;
+  // JS TIDAK bisa benar-benar memblokir screenshot tingkat OS/perangkat — lihat catatan di bawah setiap handler).
   useEffect(() => {
     const locked = examLocked || latihanLocked;
     if (!locked) return;
     const markViolation = () => { if (examLocked) setExamViolations((v) => v + 1); else setLatihanViolations((v) => v + 1); };
     const showWarning = () => { if (examLocked) setExamLeaveWarning(true); else setLatihanLeaveWarning(true); };
+    const isTypingField = (el) => el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.isContentEditable);
 
     const handleBeforeUnload = (e) => {
       e.preventDefault();
@@ -1268,6 +1271,12 @@ let rows = snap.docs.map((d) => ({
       if (!getFullscreenElement()) { markViolation(); showWarning(); }
     };
     const handleContextMenu = (e) => e.preventDefault();
+
+    // ---- Anti-copy: cegah menyalin/menyeleksi/menyeret teks soal (kolom isian esai tetap boleh diseleksi/diedit) ----
+    const handleCopyCut = (e) => { if (!isTypingField(e.target)) e.preventDefault(); };
+    const handleSelectStart = (e) => { if (!isTypingField(e.target)) e.preventDefault(); };
+    const handleDragStart = (e) => { if (!isTypingField(e.target)) e.preventDefault(); };
+
     const handleKeyDown = (e) => {
       const k = e.key.toLowerCase();
       // Blokir shortcut umum untuk keluar/refresh/buka tab baru (sebatas yang bisa dicegah browser via JS)
@@ -1278,6 +1287,32 @@ let rows = snap.docs.map((d) => ({
       ) {
         e.preventDefault();
       }
+      // Blokir shortcut copy/select-all di luar kolom isian esai
+      if (!isTypingField(e.target) && (e.ctrlKey || e.metaKey) && ["c", "x", "a"].includes(k)) {
+        e.preventDefault();
+      }
+      // Blokir print halaman, simpan halaman, dan lihat page source
+      if ((e.ctrlKey || e.metaKey) && ["p", "s", "u"].includes(k)) {
+        e.preventDefault();
+      }
+      // Blokir upaya buka DevTools (F12, Ctrl/Cmd+Shift+I/J/C) — mempersulit inspect-element utk menyalin teks
+      if (k === "f12" || ((e.ctrlKey || e.metaKey) && e.shiftKey && ["i", "j", "c"].includes(k))) {
+        e.preventDefault();
+        markViolation();
+      }
+    };
+    // Catatan penting: tombol PrintScreen (atau gesture screenshot di HP/laptop) TIDAK bisa dicegah oleh
+    // JavaScript — gambar tetap tersimpan ke clipboard/galeri OS sebelum event ini sempat berjalan.
+    // Yang bisa kita lakukan hanyalah mendeteksi tombolnya ditekan (di desktop), mencatatnya sebagai
+    // pelanggaran, menampilkan peringatan, dan mencoba membersihkan clipboard sesudahnya.
+    const handleKeyUp = (e) => {
+      if (e.key === "PrintScreen") {
+        markViolation();
+        showWarning();
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText("").catch(() => {});
+        }
+      }
     };
     // Trik agar tombol "kembali" browser tidak langsung membawa siswa keluar dari halaman ujian/latihan
     window.history.pushState(null, "", window.location.href);
@@ -1286,24 +1321,48 @@ let rows = snap.docs.map((d) => ({
       showWarning();
     };
 
+    document.body.classList.add("anti-copy-zone");
     window.addEventListener("beforeunload", handleBeforeUnload);
     document.addEventListener("visibilitychange", handleVisibility);
     window.addEventListener("blur", handleBlur);
     const removeFullscreenListener = addFullscreenChangeListener(handleFullscreenChange);
     document.addEventListener("contextmenu", handleContextMenu);
+    document.addEventListener("copy", handleCopyCut);
+    document.addEventListener("cut", handleCopyCut);
+    document.addEventListener("selectstart", handleSelectStart);
+    document.addEventListener("dragstart", handleDragStart);
     document.addEventListener("keydown", handleKeyDown);
+    document.addEventListener("keyup", handleKeyUp);
     window.addEventListener("popstate", handlePopState);
 
     return () => {
+      document.body.classList.remove("anti-copy-zone");
       window.removeEventListener("beforeunload", handleBeforeUnload);
       document.removeEventListener("visibilitychange", handleVisibility);
       window.removeEventListener("blur", handleBlur);
       removeFullscreenListener();
       document.removeEventListener("contextmenu", handleContextMenu);
+      document.removeEventListener("copy", handleCopyCut);
+      document.removeEventListener("cut", handleCopyCut);
+      document.removeEventListener("selectstart", handleSelectStart);
+      document.removeEventListener("dragstart", handleDragStart);
       document.removeEventListener("keydown", handleKeyDown);
+      document.removeEventListener("keyup", handleKeyUp);
       window.removeEventListener("popstate", handlePopState);
     };
   }, [examLocked, latihanLocked]);
+
+  // ---------- Watermark identitas saat ujian/latihan berlangsung ----------
+  // Bukan pencegah screenshot (JS tidak bisa mencegah screenshot OS/HP secara mutlak), tapi kalau ada yang
+  // tetap nekat screenshot lalu menyebarkannya, nama & waktu pengerjaan siswa ikut terekam di gambar —
+  // ini membuat penyebaran soal jadi bisa dilacak sumbernya, sehingga menjadi disinsentif yang kuat.
+  const examWatermarkBg = useMemo(() => {
+    const label = (profile?.name || authUser?.email || "Siswa").toString();
+    const stamp = new Date().toLocaleString("id-ID", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" });
+    const text = `${label} · ${stamp}`;
+    const svg = `<svg xmlns='http://www.w3.org/2000/svg' width='420' height='240'><text x='0' y='150' transform='rotate(-30 10,150)' font-size='15' font-family='sans-serif' fill='rgba(30,27,51,0.09)'>${text}</text></svg>`;
+    return `url("data:image/svg+xml,${encodeURIComponent(svg)}")`;
+  }, [profile, authUser, examLocked, latihanLocked]);
 
   function resumeExamAfterWarning() {
     setExamLeaveWarning(false);
@@ -2332,6 +2391,10 @@ let rows = snap.docs.map((d) => ({
   return (
     <div className="wrap">
       <GlobalStyle />
+
+      {(examLocked || latihanLocked) && (
+        <div className="exam-watermark-overlay" style={{ backgroundImage: examWatermarkBg }} aria-hidden="true" />
+      )}
 
       {((examLocked && examLeaveWarning) || (latihanLocked && latihanLeaveWarning)) && (
         <div style={{
@@ -4103,6 +4166,15 @@ function GlobalStyle() {
           --line:#E6E3F5; --brand:#7C5CFC; --brand-light:#EEE9FF; --brand-dark:#6238E0;
         }
         .wrap { font-family:'Inter',sans-serif; background:var(--paper); color:var(--ink); border-radius:20px; padding:0; min-height:100%; overflow:visible; }
+        /* ---- Anti-copy: aktif hanya saat siswa sedang mengerjakan ujian/latihan (lihat class "anti-copy-zone" di <body>) ---- */
+        body.anti-copy-zone { -webkit-user-select:none; -moz-user-select:none; -ms-user-select:none; user-select:none; }
+        body.anti-copy-zone input, body.anti-copy-zone textarea { -webkit-user-select:text; -moz-user-select:text; -ms-user-select:text; user-select:text; }
+        body.anti-copy-zone img { pointer-events:none; -webkit-user-drag:none; }
+        /* Kalau tetap dipaksa print (Ctrl+P via browser eksternal dsb.), sembunyikan konten soal alih-alih membiarkannya tercetak/ter-PDF-kan */
+        @media print {
+          body.anti-copy-zone .app-shell, body.anti-copy-zone .app-main-scroll { display:none !important; }
+        }
+        .exam-watermark-overlay { position:fixed; inset:0; z-index:5; pointer-events:none; background-repeat:repeat; }
         .disp { font-family:'Baloo 2',sans-serif; font-weight:700; }
         .mono { font-family:'IBM Plex Mono',monospace; }
         button { font-family:'Inter'; cursor:pointer; }
