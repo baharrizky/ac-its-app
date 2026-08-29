@@ -1001,9 +1001,17 @@ function AppInner() {
     if (!profile || profile.role !== "guru") return;
     setGuruAttendanceLoading(true);
     try {
-      const snap = await getDocs(collection(db, "attendance"));
-      let rows = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
-      if (profile.sekolah) rows = rows.filter((r) => !r.sekolah || r.sekolah === profile.sekolah);
+      const snap = await getDocs(
+  query(
+    collection(db, "attendance"),
+    where("sekolah", "==", profile.sekolah)
+  )
+);
+
+let rows = snap.docs.map((d) => ({
+  id: d.id,
+  ...d.data()
+}));
       rows.sort((a, b) => String(b.checkInAt || "").localeCompare(String(a.checkInAt || "")));
       setGuruAttendance(rows);
     } catch (e) { setGuruAttendance([]); }
