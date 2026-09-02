@@ -2869,6 +2869,7 @@ let rows = snap.docs.map((d) => ({
             {profile.role === "guru" && (
               <nav className="sidebar-nav">
                 <button className={"sidebar-navbtn" + (guruTab === "beranda" && screen !== "profil" ? " active" : "")} onClick={() => { setGuruTab("beranda"); setScreen("dashboard"); }}><LayoutDashboard size={17} />Beranda</button>
+                <button className={"sidebar-navbtn" + (guruTab === "nilaiSiswa" && screen !== "profil" ? " active" : "")} onClick={() => { setGuruTab("nilaiSiswa"); setGuruSelectedStudent(null); setScreen("dashboard"); }}><ClipboardList size={17} />Nilai Siswa</button>
                 <button className={"sidebar-navbtn" + (guruTab === "analitik" && screen !== "profil" ? " active" : "")} onClick={() => { setGuruTab("analitik"); setScreen("dashboard"); }}><TrendingUp size={17} />Analitik</button>
                 <button className={"sidebar-navbtn" + (guruTab === "progressMateri" && screen !== "profil" ? " active" : "")} onClick={() => { setGuruTab("progressMateri"); setScreen("dashboard"); }}><ListChecks size={17} />Progress per Soal</button>
                 <button className={"sidebar-navbtn" + (guruTab === "peringkat" && screen !== "profil" ? " active" : "")} onClick={() => { setGuruTab("peringkat"); setScreen("dashboard"); }}><Trophy size={17} />Peringkat</button>
@@ -2934,6 +2935,7 @@ let rows = snap.docs.map((d) => ({
                     <button className={"mobile-menu-item" + (screen === "profil" ? " active" : "")} onClick={() => goMenu("profil")}><User size={18} />Profil</button>
                   </>) : (<>
                     <button className={"mobile-menu-item" + (guruTab === "beranda" && screen !== "profil" ? " active" : "")} onClick={() => { setGuruTab("beranda"); goMenu("dashboard"); }}><LayoutDashboard size={18} />Beranda</button>
+                    <button className={"mobile-menu-item" + (guruTab === "nilaiSiswa" && screen !== "profil" ? " active" : "")} onClick={() => { setGuruTab("nilaiSiswa"); setGuruSelectedStudent(null); goMenu("dashboard"); }}><ClipboardList size={18} />Nilai Siswa</button>
                     <button className={"mobile-menu-item" + (guruTab === "analitik" && screen !== "profil" ? " active" : "")} onClick={() => { setGuruTab("analitik"); goMenu("dashboard"); }}><TrendingUp size={18} />Analitik</button>
                     <button className={"mobile-menu-item" + (guruTab === "progressMateri" && screen !== "profil" ? " active" : "")} onClick={() => { setGuruTab("progressMateri"); goMenu("dashboard"); }}><ListChecks size={18} />Progress per Soal</button>
                     <button className={"mobile-menu-item" + (guruTab === "peringkat" && screen !== "profil" ? " active" : "")} onClick={() => { setGuruTab("peringkat"); goMenu("dashboard"); }}><Trophy size={18} />Peringkat</button>
@@ -2968,6 +2970,7 @@ let rows = snap.docs.map((d) => ({
           {profile.role === "guru" && (
             <nav className="floating-nav">
               <button className={"sidebar-navbtn" + (guruTab === "beranda" && screen !== "profil" ? " active" : "")} onClick={() => { setGuruTab("beranda"); setScreen("dashboard"); }}><LayoutDashboard size={17} />Beranda</button>
+              <button className={"sidebar-navbtn" + (guruTab === "nilaiSiswa" && screen !== "profil" ? " active" : "")} onClick={() => { setGuruTab("nilaiSiswa"); setGuruSelectedStudent(null); setScreen("dashboard"); }}><ClipboardList size={17} />Nilai Siswa</button>
               <button className={"sidebar-navbtn" + (guruTab === "analitik" && screen !== "profil" ? " active" : "")} onClick={() => { setGuruTab("analitik"); setScreen("dashboard"); }}><TrendingUp size={17} />Analitik</button>
               <button className={"sidebar-navbtn" + (guruTab === "progressMateri" && screen !== "profil" ? " active" : "")} onClick={() => { setGuruTab("progressMateri"); setScreen("dashboard"); }}><ListChecks size={17} />Progress</button>
               <button className={"sidebar-navbtn" + (guruTab === "peringkat" && screen !== "profil" ? " active" : "")} onClick={() => { setGuruTab("peringkat"); setScreen("dashboard"); }}><Trophy size={17} />Peringkat</button>
@@ -3702,6 +3705,96 @@ let rows = snap.docs.map((d) => ({
                     <button className="btn-ghost" onClick={loadGuruData} disabled={guruLoading}>{guruLoading ? <Loader2 size={14} className="spin" /> : <RefreshCw size={14} />} Muat ulang</button>
                   </div>
                 </div>
+
+                {guruTab === "nilaiSiswa" && (
+                  <div className="card">
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10, flexWrap: "wrap", marginBottom: 16 }}>
+                      <div>
+                        <div className="tag-eyebrow">Rekap Nilai Latihan</div>
+                        <h2 className="disp" style={{ fontSize: 20, marginBottom: 4 }}>Nilai Siswa</h2>
+                        <p style={{ fontSize: 12.5, color: "var(--muted)", margin: 0 }}>
+                          Nilai dihitung dari seluruh soal yang tersedia. Soal yang belum dikerjakan tetap bernilai 0.
+                          Klik nama siswa untuk melihat nilai setiap materi.
+                        </p>
+                      </div>
+                      <button className="btn-ghost" onClick={loadGuruData} disabled={guruLoading}>
+                        {guruLoading ? <Loader2 size={14} className="spin" /> : <RefreshCw size={14} />} Muat ulang
+                      </button>
+                    </div>
+
+                    <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 18 }}>
+                      <div className="card" style={{ flex: "1 1 150px", minWidth: 150, background: "var(--paper-2)" }}>
+                        <div style={{ fontSize: 11, color: "var(--muted)" }}>Jumlah siswa</div>
+                        <div className="disp" style={{ fontSize: 23 }}>{guruFilteredStudents.length}</div>
+                      </div>
+                      <div className="card" style={{ flex: "1 1 150px", minWidth: 150, background: "var(--paper-2)" }}>
+                        <div style={{ fontSize: 11, color: "var(--muted)" }}>Rata-rata nilai latihan</div>
+                        <div className="disp" style={{ fontSize: 23 }}>
+                          {guruFilteredStudents.length
+                            ? Math.round(guruFilteredStudents.reduce((sum, s) => sum + (latihanNilaiOf(s.attempts, EFFECTIVE_POOL)?.nilai || 0), 0) / guruFilteredStudents.length)
+                            : 0}
+                        </div>
+                      </div>
+                      <div className="card" style={{ flex: "1 1 150px", minWidth: 150, background: "var(--paper-2)" }}>
+                        <div style={{ fontSize: 11, color: "var(--muted)" }}>Total soal latihan</div>
+                        <div className="disp" style={{ fontSize: 23 }}>
+                          {CONCEPT_ORDER.reduce((sum, c) => sum + (EFFECTIVE_POOL[c] || []).length, 0)}
+                        </div>
+                      </div>
+                    </div>
+
+                    {guruFilteredStudents.length === 0 && !guruLoading && (
+                      <p style={{ fontSize: 13.5, color: "var(--muted)" }}>
+                        Belum ada siswa pada kelas ini, atau belum ada aktivitas belajar.
+                      </p>
+                    )}
+
+                    {guruFilteredStudents.length > 0 && (
+                      <div style={{ overflowX: "auto" }}>
+                        <table>
+                          <thead>
+                            <tr>
+                              <th>#</th>
+                              <th>Nama Siswa</th>
+                              <th>Kelas</th>
+                              <th>Nilai Latihan</th>
+                              <th>Dikerjakan</th>
+                              <th>Progress</th>
+                              <th>Detail</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {guruFilteredStudents.map((s, i) => {
+                              const nl = latihanNilaiOf(s.attempts, EFFECTIVE_POOL);
+                              return (
+                                <tr key={s.uid}>
+                                  <td>{i + 1}</td>
+                                  <td>
+                                    <button
+                                      onClick={() => setGuruSelectedStudent(s)}
+                                      style={{ background: "none", border: "none", padding: 0, color: "var(--brand)", fontWeight: 700, fontSize: 13, textAlign: "left" }}
+                                    >
+                                      {s.name}
+                                    </button>
+                                  </td>
+                                  <td>{s.kelas || "-"}</td>
+                                  <td style={{ fontWeight: 800 }}>{nl ? nl.nilai : "-"}</td>
+                                  <td>{nl ? `${nl.jumlahSoal}/${nl.totalSoal}` : `0/${CONCEPT_ORDER.reduce((sum, c) => sum + (EFFECTIVE_POOL[c] || []).length, 0)}`}</td>
+                                  <td>{nl ? `${nl.progress}%` : "0%"}</td>
+                                  <td>
+                                    <button className="btn-ghost" style={{ padding: "5px 10px", fontSize: 11.5 }} onClick={() => setGuruSelectedStudent(s)}>
+                                      Lihat per materi
+                                    </button>
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                  </div>
+                )}
 
                 {guruTab === "presensi" && (
                   <div className="card">
