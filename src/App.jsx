@@ -422,14 +422,45 @@ function overallPctOf(attempts) {
   if (tested.length === 0) return 0;
   return Math.round((tested.reduce((a, b) => a + b, 0) / CONCEPT_ORDER.length) * 100);
 }
-// Nilai latihan: rata-rata skor SEMUA soal latihan yang pernah dikerjakan siswa (lintas konsep),
-// tetap terhitung meskipun siswa sudah menyelesaikan/menghabiskan latihannya (berbeda dari
-// "Progress" yang mengukur penguasaan konsep berdasarkan 5 percobaan terakhir per konsep).
-function latihanNilaiOf(attempts) {
-  const all = CONCEPT_ORDER.flatMap((c) => attempts[c] || []);
-  if (all.length === 0) return null;
-  const avg = all.reduce((a, b) => a + b, 0) / all.length;
-  return { nilai: Math.round(avg * 100), jumlahSoal: all.length };
+// Nilai latihan dihitung terhadap SEMUA soal yang tersedia, bukan hanya soal
+// yang sudah dikerjakan. Soal yang belum dikerjakan tetap bernilai 0.
+// Contoh: 6 dari 10 soal dikerjakan benar -> nilai 60, bukan 100.
+function latihanMateriOf(concept, attempts, questionPool) {
+  const totalSoal = (questionPool?.[concept] || []).length;
+  if (totalSoal === 0) return null;
+  const scores = (attempts?.[concept] || []).slice(0, totalSoal);
+  const totalSkor = scores.reduce((a, b) => a + (Number(b) || 0), 0);
+  const jumlahSoal = Math.min(scores.length, totalSoal);
+  return {
+    nilai: Math.round((totalSkor / totalSoal) * 100),
+    jumlahSoal,
+    totalSoal,
+    progress: Math.round((jumlahSoal / totalSoal) * 100),
+    totalSkor,
+  };
+}
+
+function latihanNilaiOf(attempts, questionPool) {
+  const totalSoal = CONCEPT_ORDER.reduce(
+    (sum, c) => sum + ((questionPool?.[c] || []).length),
+    0
+  );
+  if (totalSoal === 0) return null;
+  const totalSkor = CONCEPT_ORDER.reduce((sum, c) => {
+    const scores = (attempts?.[c] || []).slice(0, (questionPool?.[c] || []).length);
+    return sum + scores.reduce((a, b) => a + (Number(b) || 0), 0);
+  }, 0);
+  const jumlahSoal = CONCEPT_ORDER.reduce(
+    (sum, c) => sum + Math.min((attempts?.[c] || []).length, (questionPool?.[c] || []).length),
+    0
+  );
+  return {
+    nilai: Math.round((totalSkor / totalSoal) * 100),
+    jumlahSoal,
+    totalSoal,
+    progress: Math.round((jumlahSoal / totalSoal) * 100),
+    totalSkor,
+  };
 }
 const toneColor = { good: "var(--teal)", warn: "var(--amber)", bad: "var(--rose)", neutral: "var(--muted)" };
 const GURU_PALETTE = { strong: "#F472B6", mid: "#C4B5FD", soft: "#A78BFA", pale: "#F5F3FF" };
@@ -2353,9 +2384,12 @@ let rows = snap.docs.map((d) => ({
       CONCEPT_ORDER.forEach((c) => {
         const m = computeMastery(s.attempts[c] || []);
         row[CONCEPTS[c].name] = m !== null ? Math.round(m * 100) + "%" : "Belum diuji";
+        const lm = latihanMateriOf(c, s.attempts, EFFECTIVE_POOL);
+        row[`Nilai Latihan - ${CONCEPTS[c].name}`] = lm ? `${lm.nilai}%` : "-";
+        row[`Dikerjakan - ${CONCEPTS[c].name}`] = lm ? `${lm.jumlahSoal}/${lm.totalSoal}` : "0/0";
       });
-      row["Progress Keseluruhan"] = overallPctOf(s.attempts) + "%";
-      const nl = latihanNilaiOf(s.attempts);
+      row["Progress Penguasaan Keseluruhan"] = overallPctOf(s.attempts) + "%";
+      const nl = latihanNilaiOf(s.attempts, EFFECTIVE_POOL);
       row["Nilai Latihan"] = nl ? nl.nilai : "-";
       row["Jumlah Soal Latihan Dikerjakan"] = nl ? nl.jumlahSoal : 0;
       row["Waktu Pengerjaan Latihan"] = formatDuration(s.latihanTimeSec || 0);
@@ -2532,11 +2566,16 @@ let rows = snap.docs.map((d) => ({
         const s = guruSelectedStudent;
         const sXp = computeTotalXp(s.attempts, s.examHistory);
         const sLevel = computeLevel(sXp);
-        const nl = latihanNilaiOf(s.attempts);
+        const nl = latihanNilaiOf(s.attempts, EFFECTIVE_POOL);
         const conceptRows = CONCEPT_ORDER.map((c) => {
           const m = computeMastery(s.attempts[c] || []);
           const st = statusOf(s.attempts[c] || []);
-          return { c, m, st, pct: m !== null ? Math.round(m * 100) : null };
+          const latihan = latihanMateriOf(c, s.attempts, EFFECTIVE_POOL);
+          return {
+            c, m, st,
+            pct: m !== null ? Math.round(m * 100) : null,
+            latihan,
+          };
         });
         // Analisis: konsep yang masih perlu diperkuat, diurutkan dari yang paling lemah.
         // Mencakup konsep yang belum pernah dicoba sama sekali (dianggap paling prioritas).
@@ -2615,6 +2654,25 @@ let rows = snap.docs.map((d) => ({
                   </div>
                 </div>
               )}
+
+              <div className="tag-eyebrow" style={{ marginBottom: 8 }}>Nilai Latihan per Materi</div>
+              <div style={{ overflowX: "auto", marginBottom: 20 }}>
+                <table>
+                  <thead>
+                    <tr><th>Materi</th><th>Nilai</th><th>Dikerjakan</th><th>Progress</th></tr>
+                  </thead>
+                  <tbody>
+                    {conceptRows.map((r) => (
+                      <tr key={r.c}>
+                        <td style={{ fontWeight: 600 }}>{CONCEPTS[r.c].name}</td>
+                        <td style={{ fontWeight: 700 }}>{r.latihan ? r.latihan.nilai : "-"}</td>
+                        <td>{r.latihan ? `${r.latihan.jumlahSoal}/${r.latihan.totalSoal}` : "0/0"}</td>
+                        <td>{r.latihan ? `${r.latihan.progress}%` : "0%"}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
 
               <div className="tag-eyebrow" style={{ marginBottom: 8 }}>Penguasaan per Konsep</div>
               {conceptRows.map((r) => (
@@ -3745,16 +3803,17 @@ let rows = snap.docs.map((d) => ({
                         <div className="tag-eyebrow">Daftar siswa</div>
                         <p style={{ fontSize: 11.5, color: "var(--muted)", marginTop: -4, marginBottom: 8 }}>Klik nama siswa untuk melihat profil &amp; analisis pembelajarannya.</p>
                         <table>
-                          <thead><tr><th>Nama</th><th>Kelas</th><th>Sekolah</th><th>Progress</th><th>Nilai Latihan</th></tr></thead>
+                          <thead><tr><th>Nama</th><th>Kelas</th><th>Sekolah</th><th>Progress Penguasaan</th><th>Nilai Latihan</th><th>Dikerjakan</th></tr></thead>
                           <tbody>{guruFilteredStudents.map((s) => {
-                            const nl = latihanNilaiOf(s.attempts);
+                            const nl = latihanNilaiOf(s.attempts, EFFECTIVE_POOL);
                             return (
                               <tr key={s.uid} style={{ cursor: "pointer" }} onClick={() => setGuruSelectedStudent(s)}>
                                 <td style={{ color: "var(--brand)", fontWeight: 600 }}>{s.name}</td>
                                 <td>{s.kelas || "-"}</td>
                                 <td>{s.sekolah || "-"}</td>
                                 <td>{overallPctOf(s.attempts)}%</td>
-                                <td>{nl ? `${nl.nilai} (${nl.jumlahSoal} soal)` : "Belum mengerjakan"}</td>
+                                <td>{nl ? `${nl.nilai}` : "-"}</td>
+                                <td>{nl ? `${nl.jumlahSoal}/${nl.totalSoal}` : `0/${CONCEPT_ORDER.reduce((n, c) => n + (EFFECTIVE_POOL[c] || []).length, 0)}`}</td>
                               </tr>
                             );
                           })}</tbody>
