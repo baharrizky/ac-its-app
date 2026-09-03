@@ -959,6 +959,9 @@ function AppInner() {
   const [guruSelectedStudent, setGuruSelectedStudent] = useState(null);
   const [guruAttendance, setGuruAttendance] = useState([]);
   const [guruAttendanceLoading, setGuruAttendanceLoading] = useState(false);
+  // Tanggal presensi yang sedang dilihat guru. Default = hari ini, tetapi guru
+  // dapat memilih tanggal lain untuk melihat siapa yang hadir pada hari tersebut.
+  const [guruAttendanceDate, setGuruAttendanceDate] = useState(localDateKey());
 
   // ---------- Presensi & pemantauan aktivitas siswa ----------
   const [attendanceToday, setAttendanceToday] = useState(null);
@@ -3801,25 +3804,47 @@ let rows = snap.docs.map((d) => ({
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap", marginBottom: 16 }}>
                       <div>
                         <div className="tag-eyebrow">Monitoring Kehadiran & Aktivitas</div>
-                        <h2 className="disp" style={{ fontSize: 20, marginBottom: 4 }}>Presensi Siswa</h2>
+                        <h2 className="disp" style={{ fontSize: 20, marginBottom: 4 }}>Presensi Siswa <span style={{ fontSize: 11, fontWeight: 700, color: "var(--brand)", marginLeft: 6 }}>• Riwayat</span></h2>
                         <p style={{ fontSize: 12.5, color: "var(--muted)" }}>Tanggal dan waktu presensi serta estimasi waktu aktif siswa di web.</p>
                       </div>
                       <button className="btn-ghost" onClick={loadGuruAttendance} disabled={guruAttendanceLoading}>{guruAttendanceLoading ? <Loader2 size={14} className="spin" /> : <RefreshCw size={14} />} Muat ulang</button>
                     </div>
                     {(() => {
-                      const today = new Date().toISOString().slice(0, 10);
-                      const rows = guruAttendance.filter((r) => r.dateKey === today && (guruKelasFilter === "semua" || r.kelas === guruKelasFilter));
+                      const selectedDateLabel = new Date(`${guruAttendanceDate}T00:00:00`).toLocaleDateString("id-ID", { weekday: "long", day: "2-digit", month: "long", year: "numeric" });
+                      const isToday = guruAttendanceDate === localDateKey();
+                      const rows = guruAttendance.filter((r) => r.dateKey === guruAttendanceDate && (guruKelasFilter === "semua" || r.kelas === guruKelasFilter));
                       const present = rows.length;
+                      const filteredStudentCount = guruFilteredStudents.length;
+                      const presentUids = new Set(rows.map((r) => r.uid));
+                      const absent = Math.max(0, filteredStudentCount - presentUids.size);
                       const avgActive = rows.length ? Math.round(rows.reduce((a, r) => a + (r.activeSeconds || 0), 0) / rows.length) : 0;
-                      const fmt = (sec) => { const m = Math.floor(sec / 60); const ss = sec % 60; return `${m} m ${ss} d`; };
+                      const fmt = (sec) => { const total = Math.max(0, Math.round(sec || 0)); const h = Math.floor(total / 3600); const m = Math.floor((total % 3600) / 60); const ss = total % 60; return h > 0 ? `${h} j ${m} m` : `${m} m ${ss} d`; };
+                      const shiftDate = (days) => {
+                        const d = new Date(`${guruAttendanceDate}T00:00:00`);
+                        d.setDate(d.getDate() + days);
+                        setGuruAttendanceDate(localDateKey(d));
+                      };
                       return (
                         <>
+                          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap", marginBottom: 16, padding: 12, border: "1px solid var(--line)", borderRadius: 12, background: "#faf9ff" }}>
+                            <div>
+                              <div style={{ fontSize: 11, color: "var(--muted)", marginBottom: 3 }}>Tanggal yang dipantau</div>
+                              <div style={{ fontWeight: 800, fontSize: 14 }}>{selectedDateLabel}</div>
+                            </div>
+                            <div style={{ display: "flex", gap: 7, alignItems: "center", flexWrap: "wrap" }}>
+                              <button className="btn-ghost" onClick={() => shiftDate(-1)} title="Hari sebelumnya">‹ Sebelumnya</button>
+                              <input type="date" value={guruAttendanceDate} onChange={(e) => e.target.value && setGuruAttendanceDate(e.target.value)} style={{ padding: "8px 10px", borderRadius: 9, border: "1.5px solid var(--line)", fontSize: 13, background: "white" }} />
+                              <button className="btn-ghost" onClick={() => setGuruAttendanceDate(localDateKey())} disabled={isToday}>Hari ini</button>
+                              <button className="btn-ghost" onClick={() => shiftDate(1)} disabled={guruAttendanceDate >= localDateKey()} title="Hari berikutnya">Berikutnya ›</button>
+                            </div>
+                          </div>
+                          <p style={{ fontSize: 12, color: "var(--muted)", margin: "0 0 14px" }}>Menampilkan siswa yang melakukan presensi pada <b>{selectedDateLabel}</b>. Jadi guru bisa mengecek tanggal tertentu tanpa hanya melihat data hari ini.</p>
                           <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginBottom: 18 }}>
-                            <div className="card" style={{ flex: 1, minWidth: 150 }}><div style={{ fontSize: 11, color: "var(--muted)" }}>Hadir hari ini</div><div className="disp" style={{ fontSize: 24 }}>{present}</div></div>
-                            <div className="card" style={{ flex: 1, minWidth: 150 }}><div style={{ fontSize: 11, color: "var(--muted)" }}>Belum terdata</div><div className="disp" style={{ fontSize: 24 }}>{Math.max(0, guruFilteredStudents.length - present)}</div></div>
+                            <div className="card" style={{ flex: 1, minWidth: 150 }}><div style={{ fontSize: 11, color: "var(--muted)" }}>{isToday ? "Hadir hari ini" : "Hadir pada tanggal ini"}</div><div className="disp" style={{ fontSize: 24 }}>{present}</div></div>
+                            <div className="card" style={{ flex: 1, minWidth: 150 }}><div style={{ fontSize: 11, color: "var(--muted)" }}>Belum terdata</div><div className="disp" style={{ fontSize: 24 }}>{absent}</div></div>
                             <div className="card" style={{ flex: 1, minWidth: 150 }}><div style={{ fontSize: 11, color: "var(--muted)" }}>Rata-rata aktif</div><div className="disp" style={{ fontSize: 24 }}>{fmt(avgActive)}</div></div>
                           </div>
-                          {rows.length === 0 ? <p style={{ fontSize: 13.5, color: "var(--muted)" }}>Belum ada data presensi hari ini.</p> : (
+                          {rows.length === 0 ? <div style={{ padding: 16, border: "1px dashed var(--line)", borderRadius: 12, color: "var(--muted)", fontSize: 13.5 }}>Belum ada data presensi untuk <b>{selectedDateLabel}</b>{guruKelasFilter !== "semua" ? ` di kelas ${guruKelasFilter}` : ""}.</div> : (
                             <div style={{ overflowX: "auto" }}>
                               <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12.5 }}>
                                 <thead><tr>{["Siswa","Kelas","Jam Presensi","Mulai Akses","Aktif","Terakhir Aktif"].map(h => <th key={h} style={{ textAlign: "left", padding: "9px 8px", borderBottom: "1.5px solid var(--line)", color: "var(--muted)" }}>{h}</th>)}</tr></thead>
