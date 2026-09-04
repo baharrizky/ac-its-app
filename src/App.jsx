@@ -963,6 +963,7 @@ function AppInner() {
   // dapat memilih tanggal lain untuk melihat siapa yang hadir pada hari tersebut.
   const [guruAttendanceDate, setGuruAttendanceDate] = useState(localDateKey());
   const [guruAttendanceSort, setGuruAttendanceSort] = useState("nameAsc");
+  const [guruNilaiSort, setGuruNilaiSort] = useState("nameAsc");
 
   // ---------- Presensi & pemantauan aktivitas siswa ----------
   const [attendanceToday, setAttendanceToday] = useState(null);
@@ -3753,50 +3754,73 @@ let rows = snap.docs.map((d) => ({
                       </p>
                     )}
 
-                    {guruFilteredStudents.length > 0 && (
-                      <div style={{ overflowX: "auto" }}>
-                        <table>
-                          <thead>
-                            <tr>
-                              <th>#</th>
-                              <th>Nama Siswa</th>
-                              <th>Kelas</th>
-                              <th>Nilai Latihan</th>
-                              <th>Dikerjakan</th>
-                              <th>Progress</th>
-                              <th>Detail</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {guruFilteredStudents.map((s, i) => {
-                              const nl = latihanNilaiOf(s.attempts, EFFECTIVE_POOL);
-                              return (
-                                <tr key={s.uid}>
-                                  <td>{i + 1}</td>
-                                  <td>
-                                    <button
-                                      onClick={() => setGuruSelectedStudent(s)}
-                                      style={{ background: "none", border: "none", padding: 0, color: "var(--brand)", fontWeight: 700, fontSize: 13, textAlign: "left" }}
-                                    >
-                                      {s.name}
-                                    </button>
-                                  </td>
-                                  <td>{s.kelas || "-"}</td>
-                                  <td style={{ fontWeight: 800 }}>{nl ? nl.nilai : "-"}</td>
-                                  <td>{nl ? `${nl.jumlahSoal}/${nl.totalSoal}` : `0/${CONCEPT_ORDER.reduce((sum, c) => sum + (EFFECTIVE_POOL[c] || []).length, 0)}`}</td>
-                                  <td>{nl ? `${nl.progress}%` : "0%"}</td>
-                                  <td>
-                                    <button className="btn-ghost" style={{ padding: "5px 10px", fontSize: 11.5 }} onClick={() => setGuruSelectedStudent(s)}>
-                                      Lihat per materi
-                                    </button>
-                                  </td>
-                                </tr>
-                              );
-                            })}
-                          </tbody>
-                        </table>
-                      </div>
-                    )}
+                    {guruFilteredStudents.length > 0 && (() => {
+                      const totalLatihan = CONCEPT_ORDER.reduce((sum, c) => sum + (EFFECTIVE_POOL[c] || []).length, 0);
+                      const rows = guruFilteredStudents.map((s) => {
+                        const nl = latihanNilaiOf(s.attempts, EFFECTIVE_POOL);
+                        const nilai = nl ? Number(nl.nilai) : 0;
+                        const jumlah = nl ? Number(nl.jumlahSoal || 0) : 0;
+                        const progress = totalLatihan ? Math.round((jumlah / totalLatihan) * 100) : 0;
+                        return { s, nl, nilai, jumlah, progress };
+                      }).sort((a, b) => {
+                        const nama = (x) => String(x.s.name || "");
+                        switch (guruNilaiSort) {
+                          case "nameDesc": return nama(b).localeCompare(nama(a), "id", { sensitivity: "base" });
+                          case "nilaiDesc": return b.nilai - a.nilai || nama(a).localeCompare(nama(b), "id", { sensitivity: "base" });
+                          case "nilaiAsc": return a.nilai - b.nilai || nama(a).localeCompare(nama(b), "id", { sensitivity: "base" });
+                          case "jumlahDesc": return b.jumlah - a.jumlah || nama(a).localeCompare(nama(b), "id", { sensitivity: "base" });
+                          case "jumlahAsc": return a.jumlah - b.jumlah || nama(a).localeCompare(nama(b), "id", { sensitivity: "base" });
+                          case "progressDesc": return b.progress - a.progress || nama(a).localeCompare(nama(b), "id", { sensitivity: "base" });
+                          case "progressAsc": return a.progress - b.progress || nama(a).localeCompare(nama(b), "id", { sensitivity: "base" });
+                          default: return nama(a).localeCompare(nama(b), "id", { sensitivity: "base" });
+                        }
+                      });
+                      return (
+                        <div>
+                          <div style={{ display: "flex", justifyContent: "flex-end", alignItems: "center", gap: 8, marginBottom: 10, flexWrap: "wrap" }}>
+                            <label style={{ fontSize: 12.5, color: "var(--muted)", fontWeight: 700 }}>Urutkan:</label>
+                            <select
+                              value={guruNilaiSort}
+                              onChange={(e) => setGuruNilaiSort(e.target.value)}
+                              style={{ padding: "8px 10px", borderRadius: 9, border: "1.5px solid var(--line)", fontSize: 13, background: "white", color: "var(--ink)" }}
+                            >
+                              <option value="nameAsc">Nama A–Z</option>
+                              <option value="nameDesc">Nama Z–A</option>
+                              <option value="nilaiDesc">Nilai tertinggi → terendah</option>
+                              <option value="nilaiAsc">Nilai terendah → tertinggi</option>
+                              <option value="jumlahDesc">Soal dikerjakan terbanyak → tersedikit</option>
+                              <option value="jumlahAsc">Soal dikerjakan tersedikit → terbanyak</option>
+                              <option value="progressDesc">Progress tertinggi → terendah</option>
+                              <option value="progressAsc">Progress terendah → tertinggi</option>
+                            </select>
+                          </div>
+                          <div style={{ overflowX: "auto" }}>
+                            <table>
+                              <thead>
+                                <tr><th>#</th><th>Nama Siswa</th><th>Kelas</th><th>Nilai Latihan</th><th>Dikerjakan</th><th>Progress</th><th>Detail</th></tr>
+                              </thead>
+                              <tbody>
+                                {rows.map(({ s, nl, nilai, jumlah, progress }, i) => (
+                                  <tr key={s.uid}>
+                                    <td>{i + 1}</td>
+                                    <td>
+                                      <button onClick={() => setGuruSelectedStudent(s)} style={{ background: "none", border: "none", padding: 0, color: "var(--brand)", fontWeight: 700, fontSize: 13, textAlign: "left" }}>
+                                        {s.name}
+                                      </button>
+                                    </td>
+                                    <td>{s.kelas || "-"}</td>
+                                    <td style={{ fontWeight: 800 }}>{nl ? nilai : "-"}</td>
+                                    <td>{jumlah}/{totalLatihan}</td>
+                                    <td>{progress}%</td>
+                                    <td><button className="btn-ghost" style={{ padding: "5px 10px", fontSize: 11.5 }} onClick={() => setGuruSelectedStudent(s)}>Lihat per materi</button></td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        </div>
+                      );
+                    })()}
                   </div>
                 )}
 
