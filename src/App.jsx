@@ -962,6 +962,7 @@ function AppInner() {
   // Tanggal presensi yang sedang dilihat guru. Default = hari ini, tetapi guru
   // dapat memilih tanggal lain untuk melihat siapa yang hadir pada hari tersebut.
   const [guruAttendanceDate, setGuruAttendanceDate] = useState(localDateKey());
+  const [guruAttendanceSort, setGuruAttendanceSort] = useState("nameAsc");
 
   // ---------- Presensi & pemantauan aktivitas siswa ----------
   const [attendanceToday, setAttendanceToday] = useState(null);
@@ -3812,7 +3813,26 @@ let rows = snap.docs.map((d) => ({
                     {(() => {
                       const selectedDateLabel = new Date(`${guruAttendanceDate}T00:00:00`).toLocaleDateString("id-ID", { weekday: "long", day: "2-digit", month: "long", year: "numeric" });
                       const isToday = guruAttendanceDate === localDateKey();
-                      const rows = guruAttendance.filter((r) => r.dateKey === guruAttendanceDate && (guruKelasFilter === "semua" || r.kelas === guruKelasFilter));
+                      const filteredRows = guruAttendance.filter((r) => r.dateKey === guruAttendanceDate && (guruKelasFilter === "semua" || r.kelas === guruKelasFilter));
+                      const timeValue = (value) => value ? new Date(value).getTime() : Number.POSITIVE_INFINITY;
+                      const activeValue = (r) => Number(r.activeSeconds || 0);
+                      const sortedRows = [...filteredRows].sort((a, b) => {
+                        switch (guruAttendanceSort) {
+                          case "nameDesc":
+                            return String(b.name || "").localeCompare(String(a.name || ""), "id", { sensitivity: "base" });
+                          case "checkInAsc":
+                            return timeValue(a.checkInAt) - timeValue(b.checkInAt);
+                          case "checkInDesc":
+                            return timeValue(b.checkInAt) - timeValue(a.checkInAt);
+                          case "activeDesc":
+                            return activeValue(b) - activeValue(a);
+                          case "activeAsc":
+                            return activeValue(a) - activeValue(b);
+                          default:
+                            return String(a.name || "").localeCompare(String(b.name || ""), "id", { sensitivity: "base" });
+                        }
+                      });
+                      const rows = sortedRows;
                       const present = rows.length;
                       const filteredStudentCount = guruFilteredStudents.length;
                       const presentUids = new Set(rows.map((r) => r.uid));
@@ -3837,6 +3857,21 @@ let rows = snap.docs.map((d) => ({
                               <button className="btn-ghost" onClick={() => setGuruAttendanceDate(localDateKey())} disabled={isToday}>Hari ini</button>
                               <button className="btn-ghost" onClick={() => shiftDate(1)} disabled={guruAttendanceDate >= localDateKey()} title="Hari berikutnya">Berikutnya ›</button>
                             </div>
+                          </div>
+                          <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", marginBottom: 14 }}>
+                            <label style={{ fontSize: 12.5, color: "var(--muted)", fontWeight: 700 }}>Urutkan presensi:</label>
+                            <select
+                              value={guruAttendanceSort}
+                              onChange={(e) => setGuruAttendanceSort(e.target.value)}
+                              style={{ padding: "8px 10px", borderRadius: 9, border: "1.5px solid var(--line)", fontSize: 13, background: "white", color: "var(--ink)" }}
+                            >
+                              <option value="nameAsc">Nama A–Z</option>
+                              <option value="nameDesc">Nama Z–A</option>
+                              <option value="checkInAsc">Jam presensi: terlama → terbaru</option>
+                              <option value="checkInDesc">Jam presensi: terbaru → terlama</option>
+                              <option value="activeDesc">Durasi aktif: terlama → terpendek</option>
+                              <option value="activeAsc">Durasi aktif: terpendek → terlama</option>
+                            </select>
                           </div>
                           <p style={{ fontSize: 12, color: "var(--muted)", margin: "0 0 14px" }}>Menampilkan siswa yang melakukan presensi pada <b>{selectedDateLabel}</b>. Jadi guru bisa mengecek tanggal tertentu tanpa hanya melihat data hari ini.</p>
                           <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginBottom: 18 }}>
